@@ -108,26 +108,148 @@ void fbtft_write_reg8_bus9(struct fbtft_par *par, int len, ...)
 }
 EXPORT_SYMBOL(fbtft_write_reg8_bus9);
 
-static void spi_complete_cmd_init_data_write(void *arg)
+static int prev_write_line_start = -1;
+static int prev_write_line_end = -1;
+static int write_line_start = -1;
+static int write_line_end = -1;
+static bool lock = false;
+
+int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
+{
+	// printk("%s\n", __func__);
+	if (lock)
+		return -1;
+	lock = true;
+
+	/* Debug fps */
+#define FPS_DEBUG	1
+#if FPS_DEBUG
+	long fps;
+	ktime_t ts_now = ktime_get();
+
+	/* First measurement */
+	if (!ktime_to_ns(par->update_time))
+		par->update_time = ts_now;
+
+	fps = ktime_us_delta(ts_now, par->update_time);
+	par->update_time = ts_now;
+	fps = fps ? 1000000 / fps : 0;
+
+	if (fps) {
+		par->avg_fps += fps;
+		par->nb_fps_values++;
+
+		if (par->nb_fps_values == 200) {
+			fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
+				 "Display update: fps=%ld\n", par->avg_fps / par->nb_fps_values);
+			par->avg_fps = 0;
+			par->nb_fps_values = 0;
+		}
+	}
+
+#endif //FPS_DEBUG
+
+	/* Post process screen for doufle buf cpy, notifs, rotation soft... */
+	fbtft_post_process_screen(par);
+
+	/* new line to write */
+	write_line_start = par->write_line_start;
+	write_line_end = par->write_line_end;
+	par->write_line_start = -1;
+	par->write_line_end = -1;
+
+	/* Set window for interlacing */
+	if (par->interlacing) {
+		par->length_data_transfer = par->info->var.yres * 2;
+		write_line_start = par->odd_line?1:0;
+		write_line_end = write_line_start;
+		fbtft_write_cmd_window_line(par);
+
+	} else {
+		/* Start sending full screen */
+		par->length_data_transfer = par->info->var.yres * par->info->fix.line_length;
+		write_line_start = 0;
+		write_line_end = par->info->var.yres - 1;
+		fbtft_write_init_cmd_data_transfers(par);
+	}
+	return 0;
+}
+EXPORT_SYMBOL(fbtft_start_new_screen_transfer_async);
+
+static u8 cmd_window_line = MIPI_DCS_SET_PAGE_ADDRESS;
+static u8 buf_ylim[4];
+
+static void spi_complete_cmd_window_line(void *arg)
 {
 	struct fbtft_par *par = (struct fbtft_par *)arg;
 	// printk("%s\n", __func__);
 
-	/* Start new data write (full display) */
-	int len = par->info->var.yres * par->info->fix.line_length;
-	fbtft_write_vmem16_bus8_async(par, 0, len);
+	/* Start data write for line info */
+	fbtft_write_data_window_line(par);
 }
 
-static void spi_complete_data_write(void *arg)
-{
-	struct fbtft_par *par = (struct fbtft_par *)arg;
-	// printk("%s\n", __func__);
+int fbtft_write_cmd_window_line(struct fbtft_par *par){
 
-	/* sleep */
-	// msleep(1);
+	int ret = 0;
+
+	//printk("%s\n", __func__);
+
+	/* Resetting to 0 for incoming cmd init data write */
+	if (gpio_is_valid(par->gpio.dc))
+		gpio_set_value(par->gpio.dc, 0);
 
 	/* Start sending cmd init data */
+	ret = par->fbtftops.write_async(par, &cmd_window_line, 1, spi_complete_cmd_window_line);
+	if (ret < 0)
+		dev_err(par->info->device,
+			"write() failed and returned %d\n", ret);
+
+	return ret;
+
+}
+EXPORT_SYMBOL(fbtft_write_cmd_window_line);
+
+static void spi_complete_data_window_line(void *arg)
+{
+	struct fbtft_par *par = (struct fbtft_par *) arg;
+	//printk("%s\n", __func__);
+
+	/* Start sending cmd for real data transfer */
 	fbtft_write_init_cmd_data_transfers(par);
+}
+
+int fbtft_write_data_window_line(struct fbtft_par *par)
+{
+	int ret = 0;
+
+	/* Setting new line coordinates */
+	buf_ylim[0] = (write_line_start >> 8) & 0xFF;
+	buf_ylim[1] = write_line_start & 0xFF;
+	buf_ylim[2] = (write_line_end >> 8) & 0xFF;
+	buf_ylim[3] = write_line_end & 0xFF;
+
+	//printk("%s, buf[0] = %d, buf[1] = %d, buf[2] = %d, buf[3] = %d\n", __func__, buf[0], buf[1], buf[2], buf[3]);
+
+	/* Resetting to 1 for incoming data */
+	if (gpio_is_valid(par->gpio.dc))
+		gpio_set_value(par->gpio.dc, 1);
+
+	/* Start sending window_line data */
+	ret = par->fbtftops.write_async(par, buf_ylim, 4, spi_complete_data_window_line);
+	if (ret < 0)
+		dev_err(par->info->device,
+			"write() failed and returned %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(fbtft_write_data_window_line);
+
+static void spi_complete_cmd_init_data_write(void *arg)
+{
+	struct fbtft_par *par = (struct fbtft_par *) arg;
+	//printk("%s\n", __func__);
+
+	fbtft_write_vmem16_bus8_async(par, write_line_start * par->info->fix.line_length, par->length_data_transfer);
 }
 
 int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par)
@@ -136,9 +258,6 @@ int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par)
 	int ret = 0;
 
 	// printk("%s\n", __func__);
-
-	/* Post process */
-	fbtft_post_process_screen(par, 0, par->info->var.yres - 1);
 
 	/* Resetting to 0 for incoming cmd init data write */
 	if (gpio_is_valid(par->gpio.dc))
@@ -150,36 +269,40 @@ int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par)
 	if (ret < 0)
 		dev_err(par->info->device, "write() failed and returned %d\n", ret);
 
-	/* Debug fps */
-#define FPS_DEBUG 0
-#if FPS_DEBUG
-	ktime_t ts_now = ktime_get();
-
-	/* First measurement */
-	if (!ktime_to_ns(par->update_time))
-		par->update_time = ts_now;
-
-	long fps = ktime_us_delta(ts_now, par->update_time);
-	par->update_time = ts_now;
-	fps = fps ? 1000000 / fps : 0;
-
-	if (fps) {
-		par->avg_fps += fps;
-		par->nb_fps_values++;
-
-		if (par->nb_fps_values == 200) {
-			dev_info(par->info->device, "Display update: fps=%ld\n",
-				 par->avg_fps / par->nb_fps_values);
-			par->avg_fps = 0;
-			par->nb_fps_values = 0;
-		}
-	}
-
-#endif // FPS_DEBUG
-
 	return ret;
 }
 EXPORT_SYMBOL(fbtft_write_init_cmd_data_transfers);
+
+static void spi_complete_data_write(void *arg)
+{
+	struct fbtft_par *par = (struct fbtft_par *) arg;
+	//printk("%s, par->interlacing=%d, write_line_start=%d\n", __func__, par->interlacing?1:0, write_line_start);
+
+	/* sleep */
+	//msleep(1);
+
+	if (par->interlacing) {
+		/* Check if last line */
+		bool last_line = (par->odd_line && write_line_start >= par->info->var.yres-1) ||
+						(!par->odd_line && write_line_start >= par->info->var.yres-2);
+
+		if (last_line) {
+			/* Start sending cmd init data */
+			par->odd_line = !par->odd_line;
+			lock = false;
+			fbtft_start_new_screen_transfer_async(par);
+		} else {
+			write_line_start += 2;
+			write_line_end = write_line_start;
+
+			/* Setting window for next line */
+			fbtft_write_cmd_window_line(par);
+		}
+	} else {
+		lock = false;
+		fbtft_start_new_screen_transfer_async(par);
+	}
+}
 
 /*****************************************************************************
  *
@@ -203,8 +326,6 @@ int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t l
 		__func__, offset, len);
 
 	remain = len / 2;
-	//vmem16 = (u16 *)(par->info->screen_buffer + offset);
-	//vmem16 = (u16 *)(par->vmem_post_process + offset);
 	vmem16 = (u16 *)(par->vmem_ptr + offset);
 
 	if (par->gpio.dc != -1)

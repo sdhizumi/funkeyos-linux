@@ -154,6 +154,7 @@ struct fbtft_platform_data {
 	unsigned long rotate_soft;
 	bool bgr;
 	bool spi_async_mode;
+	bool interlacing;
 	unsigned int fps;
 	int txbuflen;
 	u8 startbyte;
@@ -258,7 +259,15 @@ struct fbtft_par {
 	int nb_fps_values;
 	bool bgr;
 	void *extra;
+
+	/* SPI async */
 	bool spi_async_mode;
+	bool interlacing;
+	bool odd_line;
+	int cur_line;
+	int write_line_start;
+	int write_line_end;
+	u32 length_data_transfer;
 };
 
 #define NUMARGS(...)  (sizeof((int[]){__VA_ARGS__})/sizeof(int))
@@ -283,8 +292,7 @@ int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
 void fbtft_rotate_soft(u16 *mat, int size, int rotation);
-void fbtft_post_process_screen(struct fbtft_par *par,
-			unsigned int dirty_lines_start, unsigned int dirty_lines_end);
+void fbtft_post_process_screen(struct fbtft_par *par);
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);
@@ -296,6 +304,9 @@ int fbtft_write_gpio16_wr(struct fbtft_par *par, void *buf, size_t len);
 int fbtft_write_gpio16_wr_latched(struct fbtft_par *par, void *buf, size_t len);
 
 /* fbtft-bus.c */
+int fbtft_start_new_screen_transfer_async(struct fbtft_par *par);
+int fbtft_write_cmd_window_line(struct fbtft_par *par);
+int fbtft_write_data_window_line(struct fbtft_par *par);
 int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par);
 int fbtft_write_vmem8_bus8(struct fbtft_par *par, size_t offset, size_t len);
 int fbtft_write_vmem16_bus16(struct fbtft_par *par, size_t offset, size_t len);

@@ -344,18 +344,25 @@ static void fbtft_set_addr_win(struct fbtft_par *par, int xs, int ys, int xe,
 	static int prev_ye = -1;
 
 	/* Check if values need to be sent */
-	if (prev_xs != xs || prev_ys != ys || prev_xe != xe || prev_ye != ye) {
+	if (prev_xs != xs || prev_xe != xe) {
 
-		// Save prev bounding box values
+	  /* Save prev bounding box values */
 		prev_xs = xs;
-		prev_ys = ys;
 		prev_xe = xe;
-		prev_ye = ye;
 
 		/* Set new bounding Box */
 		write_reg(par, MIPI_DCS_SET_COLUMN_ADDRESS,
 			  (xs >> 8) & 0xFF, xs & 0xFF, (xe >> 8) & 0xFF, xe & 0xFF);
+	}
 
+	// Check if values need to be sent
+	if (prev_ys != ys || prev_ye != ye) {
+
+		// Save prev bounding box values
+		prev_ys = ys;
+		prev_ye = ye;
+
+		/* Set new bounding Box */
 		write_reg(par, MIPI_DCS_SET_PAGE_ADDRESS,
 			  (ys >> 8) & 0xFF, ys & 0xFF, (ye >> 8) & 0xFF, ye & 0xFF);
 	}
@@ -526,37 +533,42 @@ static void fbtft_mkdirty(struct fb_info *info, int y, int height)
 	schedule_delayed_work(&info->deferred_work, fbdefio->delay);
 }
 
-void fbtft_post_process_screen(struct fbtft_par *par, unsigned int dirty_lines_start, unsigned int dirty_lines_end)
+void fbtft_post_process_screen(struct fbtft_par *par)
 {
 	int x_notif = 0;
 	int y_notif = 0;
 	bool screen_post_process = false;
 
-	/* Reset default write buffer */
-	par->vmem_ptr = par->info->screen_buffer;
+	/* bypass */
+	screen_post_process = true;
+	par->write_line_start = 0;
+	par->write_line_end = par->info->var.yres - 1;
 
-	/* If soft rotation, mark whole screen to update to avoid data non rotated */
+	/* If soft rotation, mark whole screen to update to avoid data
+	   non rotated */
 	if (par->pdata->rotate_soft) {
-		dirty_lines_start = 0;
-		dirty_lines_end = par->info->var.yres - 1;
-		par->vmem_ptr = par->vmem_post_process;
+		par->write_line_start = 0;
+		par->write_line_end = par->info->var.yres - 1;
 		screen_post_process = true;
 	}
+
+	/* If notification, mark whole screen to update */
 	if (par->notification[0]) {
-		if (y_notif < dirty_lines_start)
-			dirty_lines_start = y_notif;
-		if (y_notif + MONACO_HEIGHT > dirty_lines_end)
-			dirty_lines_end = y_notif + MONACO_HEIGHT;
-		par->vmem_ptr = par->vmem_post_process;
+		/* bypass*/
+		par->write_line_start = 0;
+		par->write_line_end = par->info->var.yres - 1;
 		screen_post_process = true;
 	}
 
 	/* Post process */
 	if (screen_post_process) {
+		/* Change vmem ptr to send by SPI */
+		par->vmem_ptr = par->vmem_post_process;
+
 		/* Copy buffer */
-		memcpy(par->vmem_post_process + dirty_lines_start * par->info->fix.line_length,
-			par->info->screen_buffer + dirty_lines_start * par->info->fix.line_length,
-			(dirty_lines_end-dirty_lines_start+1) * par->info->fix.line_length);
+		memcpy(par->vmem_post_process + par->write_line_start * par->info->fix.line_length,
+			par->info->screen_buffer + par->write_line_start * par->info->fix.line_length,
+			(par->write_line_end-par->write_line_start + 1) * par->info->fix.line_length);
 
 		/* Notifications */
 		if (par->notification[0]) {
@@ -565,10 +577,10 @@ void fbtft_post_process_screen(struct fbtft_par *par, unsigned int dirty_lines_s
 			basic_text_out16_bg((u16 *)par->vmem_post_process, par->info->var.xres, par->info->var.yres,
 				x_notif, y_notif, RGB565(255, 255, 255), RGB565(0, 0, 0), par->notification);
 
-			if (y_notif < dirty_lines_start)
-				dirty_lines_start = y_notif;
-			if (y_notif + MONACO_HEIGHT > dirty_lines_end)
-				dirty_lines_end = y_notif + MONACO_HEIGHT;
+			if (y_notif < par->write_line_start)
+				par->write_line_start = y_notif;
+			if (y_notif + MONACO_HEIGHT > par->write_line_end)
+				par->write_line_end = y_notif + MONACO_HEIGHT;
 		}
 
 		/* Soft rotation */
@@ -585,6 +597,36 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 	unsigned long index;
 	unsigned int y_low = 0, y_high = 0;
 	int count = 0;
+
+	//#define FPS_DEBUG
+	#if 0
+		long fps;
+		static ktime_t update_time;
+		static int nb_fps_values = 0;
+		static long avg_fps = 0;
+		ktime_t ts_now = ktime_get();
+
+		/* First measurement */
+		if (!ktime_to_ns(update_time))
+				update_time = ts_now;
+
+		fps = ktime_us_delta(ts_now, update_time);
+		update_time = ts_now;
+		fps = fps ? 1000000 / fps : 0;
+
+		if (fps) {
+			avg_fps += fps;
+			nb_fps_values++;
+
+			if (nb_fps_values == 200) {
+				fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
+					 "fbtft_deferred_io update: fps=%ld\n", avg_fps / nb_fps_values);
+				avg_fps = 0;
+				nb_fps_values = 0;
+			}
+		}
+
+	#endif //FPS_DEBUG
 
 	spin_lock(&par->dirty_lock);
 	dirty_lines_start = par->dirty_lines_start;
@@ -611,10 +653,27 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 			dirty_lines_end = y_high;
 	}
 
-	fbtft_post_process_screen(par, dirty_lines_start, dirty_lines_end);
+	/* Copy buffer */
+	if (dirty_lines_start!=0 || dirty_lines_end!=par->info->var.yres - 1)
+		printk("dirty_lines_start = %d, dirty_lines_end = %d\n", dirty_lines_start, dirty_lines_end);
+	par->write_line_start = dirty_lines_start;
+	par->write_line_end = dirty_lines_end;
+	memcpy(par->vmem_post_process + dirty_lines_start * par->info->fix.line_length,
+			par->info->screen_buffer + dirty_lines_start * par->info->fix.line_length,
+			(dirty_lines_end-dirty_lines_start + 1) * par->info->fix.line_length);
+	par->vmem_ptr = par->vmem_post_process;
 
-	/* Screen upgrade */
-	par->fbtftops.update_display(par, dirty_lines_start, dirty_lines_end);
+	/* Exit in SPI async mode, otherwise update screen now */
+	if (par->spi_async_mode) {
+		fbtft_start_new_screen_transfer_async(par);
+		return;
+	} else {
+		/* Post process screen for doufle buf cpy, notifs, rotation soft... */
+		fbtft_post_process_screen(par);
+
+		/* Screen upgrade */
+		par->fbtftops.update_display(par, dirty_lines_start, dirty_lines_end);
+	}
 }
 
 static void fbtft_fb_fillrect(struct fb_info *info,
@@ -1084,6 +1143,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	spin_lock_init(&par->dirty_lock);
 	par->bgr = pdata->bgr;
 	par->spi_async_mode = pdata->spi_async_mode;
+	par->interlacing = pdata->interlacing;
 	par->startbyte = pdata->startbyte;
 	par->init_sequence = init_sequence;
 	par->gamma.curves = gamma_curves;
@@ -1245,10 +1305,12 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 		sprintf(text2, ", spi%d.%d at %d MHz", spi->master->bus_num,
 			spi->chip_select, spi->max_speed_hz / 1000000);
 	dev_info(fb_info->dev,
-		 "%s frame buffer, %dx%d, %d KiB video memory%s, fps=%lu%s\n",
+		 "%s frame buffer, %dx%d, %d KiB video memory%s, fps=%lu%s, %s%s\n",
 		 fb_info->fix.id, fb_info->var.xres, fb_info->var.yres,
 		 fb_info->fix.smem_len >> 10, text1,
-		 HZ / fb_info->fbdefio->delay, text2);
+		 HZ / fb_info->fbdefio->delay, text2,
+		 par->spi_async_mode ? "SPI mode asynchrone, " : "",
+		 par->interlacing ? "Interlaced" : "");
 
 #ifdef CONFIG_FB_BACKLIGHT
 	/* Turn on backlight if available */
@@ -1566,6 +1628,7 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 	pdata->rotate_soft = fbtft_of_value(node, "rotate_soft");
 	pdata->bgr = of_property_read_bool(node, "bgr");
 	pdata->spi_async_mode = of_property_read_bool(node, "spi_async_mode");
+	pdata->interlacing = of_property_read_bool(node, "interlacing");
 	pdata->fps = fbtft_of_value(node, "fps");
 	pdata->txbuflen = fbtft_of_value(node, "txbuflen");
 	pdata->startbyte = fbtft_of_value(node, "startbyte");
@@ -1704,10 +1767,12 @@ int fbtft_probe_common(struct fbtft_display *display,
 	if (ret < 0)
 		goto out_release;
 
-	if (par->spi_async_mode)
+	if (par->spi_async_mode) {
 		/* Start constant Display update using spi async */
-		fbtft_write_init_cmd_data_transfers(par);
-
+		par->write_line_start = 0;
+		par->write_line_end = par->info->var.yres - 1;
+		fbtft_start_new_screen_transfer_async(par);
+	}
 	return 0;
 
 out_release:

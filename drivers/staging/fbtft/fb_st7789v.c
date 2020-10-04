@@ -156,12 +156,15 @@ static int init_display(struct fbtft_par *par)
 	//write_reg(par, 0xC6,0x1F); //39Hz
 	//write_reg(par, 0xC6,0x1A); //44Hz
 	//write_reg(par, 0xC6,0x17); //48Hz
+	//write_reg(par, 0xC6,0x16); //49Hz
 	//write_reg(par, 0xC6,0x15); //50Hz
+	//write_reg(par, 0xC6,0x14); //52Hz
 	//write_reg(par, 0xC6,0x12); //55Hz
 	//write_reg(par, 0xC6,0x10); //58Hz
-	//write_reg(par, 0xC6,0x0F); //60Hz
-	write_reg(par, 0xC6,0x09); //60Hz
+	//write_reg(par, 0xC6,0x0F); //60H
+	//write_reg(par, 0xC6,0x09); //60Hz
 	//write_reg(par, 0xC6,0x03); //99Hz
+	write_reg(par, 0xC6,0x02); //105Hz
 
 	write_reg(par, MIPI_DCS_SET_DISPLAY_ON);
 

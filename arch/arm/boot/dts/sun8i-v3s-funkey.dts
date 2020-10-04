@@ -179,7 +179,7 @@
                txbuflen = <115202>;
                spi_async_mode = "true";
                rotate = <0>;
-               rotate_soft = <0>;
+               rotate_soft = <270>;
                fps = <100>;
                buswidth = <8>;
                reset-gpios = <&pio 1 2 GPIO_ACTIVE_HIGH>;	//PB2

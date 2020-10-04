@@ -6,7 +6,7 @@
 #include "fbtft.h"
 
 /* Ugly static declarations for now */
-#define NB_STORED_SPI_MSG	100
+#define NB_STORED_SPI_MSG	1
 static int idx_spi_msg = 0;
 static struct spi_transfer stored_spi_transfers[NB_STORED_SPI_MSG];
 static struct spi_message stored_spi_msg[NB_STORED_SPI_MSG];
@@ -81,7 +81,9 @@ int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len)
 
 	spi_message_init(&m);
 	spi_message_add_tail(&t, &m);
+	//spi_sync(par->spi, &m);
 	return spi_sync(par->spi, &m);
+	//return 0;
 }
 EXPORT_SYMBOL(fbtft_write_spi);
 

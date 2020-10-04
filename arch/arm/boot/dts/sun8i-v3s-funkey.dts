@@ -74,6 +74,10 @@
 	status = "okay";
 };
 
+&codec_analog {
+	status = "okay";
+};
+
 &ehci0 {
 	status = "okay";
 };

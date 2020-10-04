@@ -149,11 +149,11 @@ static int init_display(struct fbtft_par *par)
 	 */
 	write_reg(par, PWCTRL1, 0xA4, 0xA1);
 
-	/* Ystart at 80 , Yend at 240 */
-	write_reg(par, 0x2B, 0x00, 0x50, 0x00, 0xF0);
-
 	/* Display Inversion of colors */
 	write_reg(par, 0x21);
+
+	/* 39Hz refresh rate */
+	write_reg(par, 0xC6,0x1F);
 
 	write_reg(par, MIPI_DCS_SET_DISPLAY_ON);
 
@@ -189,6 +189,14 @@ static int set_var(struct fbtft_par *par)
 		return -EINVAL;
 	}
 	write_reg(par, MIPI_DCS_SET_ADDRESS_MODE, madctl_par);
+
+	// All offset operations are done after in fbtft_set_addr_win, not here
+	/* Ystart at 0 , Yend at 239 */
+	write_reg(par, 0x2B, 0x00, 0x00, 0x00, 0xEF);
+
+	/* Xstart at 80 , Xend at 319 */
+	write_reg(par, 0x2A, 0x00, 0x50, 0x01, 0x3F);
+
 	return 0;
 }
 

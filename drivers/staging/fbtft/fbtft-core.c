@@ -391,9 +391,12 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 	fbtft_par_dbg(DEBUG_UPDATE_DISPLAY, par, "%s(start_line=%u, end_line=%u)\n",
 		      __func__, start_line, end_line);
 
-	if (par->fbtftops.set_addr_win)
+	// Carefull removing this. this will work only if the full
+	// screen is updated all at once
+	if (par->fbtftops.set_addr_win){
 		par->fbtftops.set_addr_win(par, 0, start_line,
 				par->info->var.xres - 1, end_line);
+	}
 
 	offset = start_line * par->info->fix.line_length;
 	len = (end_line - start_line + 1) * par->info->fix.line_length;

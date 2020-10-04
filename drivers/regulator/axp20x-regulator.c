@@ -169,7 +169,7 @@ static const struct regulator_desc axp20x_regulators[] = {
 		 AXP20X_DCDC2_V_OUT, 0x3f, AXP20X_PWR_OUT_CTRL, 0x10),
 	AXP_DESC(AXP20X, DCDC3, "dcdc3", "vin3", 700, 3500, 25,
 		 AXP20X_DCDC3_V_OUT, 0x7f, AXP20X_PWR_OUT_CTRL, 0x02),
-	AXP_DESC_FIXED(AXP20X, LDO1, "ldo1", "acin", 1300),
+	AXP_DESC_FIXED(AXP20X, LDO1, "ldo1", "acin", 3300),
 	AXP_DESC(AXP20X, LDO2, "ldo2", "ldo24in", 1800, 3300, 100,
 		 AXP20X_LDO24_V_OUT, 0xf0, AXP20X_PWR_OUT_CTRL, 0x04),
 	AXP_DESC(AXP20X, LDO3, "ldo3", "ldo3in", 700, 3500, 25,

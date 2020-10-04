@@ -73,6 +73,17 @@
 			device_type = "cpu";
 			reg = <0>;
 			clocks = <&ccu CLK_CPU>;
+                        clock-latency = <244144>; /* 8 32k periods */
+                        clock-frequency = <1296000>;
+                        operating-points = <
+                                /* kHz    uV */
+                                1296000 1200000
+                                1008000 1200000
+                                864000  1200000
+                                720000  1100000
+                                480000  1000000
+                                >;
+
 		};
 	};
 

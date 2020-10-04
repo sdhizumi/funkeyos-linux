@@ -444,6 +444,7 @@
 		codec_analog: codec-analog@01c23000 {
 			compatible = "allwinner,sun8i-v3s-codec-analog";
 			reg = <0x01c23000 0x4>;
+			status = "disabled";
 		};
 
 		uart0: serial@01c28000 {

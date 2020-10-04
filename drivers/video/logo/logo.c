@@ -36,6 +36,10 @@ static int __init fb_logo_late_init(void)
 
 late_initcall_sync(fb_logo_late_init);
 
+/* Ugly Bypass: */
+extern const struct linux_logo logo_funkey_clut224;
+#define CONFIG_LOGO_FUNKEY_CLUT224
+
 /* logo's are marked __initdata. Use __ref to tell
  * modpost that it is intended that this function uses data
  * marked __initdata.
@@ -110,6 +114,10 @@ const struct linux_logo * __ref fb_find_logo(int depth)
 #ifdef CONFIG_LOGO_M32R_CLUT224
 		/* M32R Linux logo */
 		logo = &logo_m32r_clut224;
+#endif
+#ifdef CONFIG_LOGO_FUNKEY_CLUT224
+		/* Funkey Linux logo */
+		logo = &logo_funkey_clut224;
 #endif
 	}
 	return logo;

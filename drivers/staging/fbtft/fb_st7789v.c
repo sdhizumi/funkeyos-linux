@@ -26,8 +26,8 @@
 #define DRVNAME "fb_st7789v"
 
 #define DEFAULT_GAMMA \
-	"70 2C 2E 15 10 09 48 33 53 0B 19 18 20 25\n" \
-	"70 2C 2E 15 10 09 48 33 53 0B 19 18 20 25"
+	"f0 19 1e 0A 09 15 3D 44 51 19 14 13 2c 31\n" \
+	"f0 18 1E 0A 09 25 3F 43 52 19 14 13 2c 31"
 
 /**
  * enum st7789v_command - ST7789V display controller commands

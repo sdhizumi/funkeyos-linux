@@ -117,13 +117,15 @@ static bool lock = false;
 int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 {
 	// printk("%s\n", __func__);
+	if (par->pdata->te_irq && !par->ready_for_spi_async)
+		return -1;
 	if (lock)
 		return -1;
 	lock = true;
 
 	/* Debug fps */
-#define FPS_DEBUG	1
-#if FPS_DEBUG
+//#define FPS_DEBUG
+#ifdef FPS_DEBUG
 	long fps;
 	ktime_t ts_now = ktime_get();
 
@@ -290,7 +292,8 @@ static void spi_complete_data_write(void *arg)
 			/* Start sending cmd init data */
 			par->odd_line = !par->odd_line;
 			lock = false;
-			fbtft_start_new_screen_transfer_async(par);
+			if (!par->pdata->te_irq)
+				fbtft_start_new_screen_transfer_async(par);
 		} else {
 			write_line_start += 2;
 			write_line_end = write_line_start;
@@ -300,7 +303,8 @@ static void spi_complete_data_write(void *arg)
 		}
 	} else {
 		lock = false;
-		fbtft_start_new_screen_transfer_async(par);
+		if (!par->pdata->te_irq)
+			fbtft_start_new_screen_transfer_async(par);
 	}
 }
 

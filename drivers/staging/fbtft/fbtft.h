@@ -154,12 +154,14 @@ struct fbtft_platform_data {
 	unsigned long rotate_soft;
 	bool bgr;
 	bool spi_async_mode;
+	bool te_irq;
 	bool interlacing;
 	unsigned int fps;
 	int txbuflen;
 	u8 startbyte;
 	char *gamma;
 	void *extra;
+	struct fbtft_par *par;
 };
 
 /**
@@ -263,6 +265,7 @@ struct fbtft_par {
 
 	/* SPI async */
 	bool spi_async_mode;
+	bool ready_for_spi_async;
 	bool interlacing;
 	bool odd_line;
 	int cur_line;

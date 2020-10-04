@@ -184,6 +184,7 @@
                buswidth = <8>;
                reset-gpios = <&pio 1 2 GPIO_ACTIVE_HIGH>;	//PB2
                dc-gpios = <&pio 2 0 GPIO_ACTIVE_LOW>;		//PC0 (MISO)
+               te-irq = <&pio 1 1 GPIO_ACTIVE_LOW>;		//PB1
                debug = <0>;
        };
 };

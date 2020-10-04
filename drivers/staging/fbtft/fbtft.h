@@ -253,6 +253,7 @@ struct fbtft_par {
 	} overlay;
 	char notification[FBTFT_NOTIF_MAX_SIZE+1];
 	unsigned long debug;
+	unsigned long low_battery;
 	bool first_update_done;
 	ktime_t update_time;
 	long avg_fps;

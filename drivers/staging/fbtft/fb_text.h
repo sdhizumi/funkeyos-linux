@@ -26,6 +26,8 @@
 void DrawText(u16 *framebuffer, int framebufferWidth,
               int framebufferStrideBytes, int framebufferHeight,
               const char *text, int x, int y, u16 color, u16 bgColor);
+void draw_low_battery(u16 *framebuffer, int framebufferWidth,
+		      int framebufferHeight);
 
 /*extern unsigned char fontdata8x8[64*16];
 extern unsigned char fontdata6x8[256-32][8];*/

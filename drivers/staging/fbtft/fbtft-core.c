@@ -560,6 +560,13 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 		screen_post_process = true;
 	}
 
+	/* Low battery icon */
+	if (par->low_battery) {
+		par->write_line_start = 0;
+		par->write_line_end = par->info->var.yres - 1;
+		screen_post_process = true;
+	}
+
 	/* Post process */
 	if (screen_post_process) {
 		/* Change vmem ptr to send by SPI */
@@ -581,6 +588,11 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 				par->write_line_start = y_notif;
 			if (y_notif + MONACO_HEIGHT > par->write_line_end)
 				par->write_line_end = y_notif + MONACO_HEIGHT;
+		}
+
+		/* Low battery icon */
+		if (par->low_battery) {
+			draw_low_battery((u16 *)par->vmem_post_process, par->info->var.xres, par->info->var.yres);
 		}
 
 		/* Soft rotation */

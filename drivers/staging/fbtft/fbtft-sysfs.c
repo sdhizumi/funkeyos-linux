@@ -387,6 +387,35 @@ static ssize_t show_notification(struct device *device,
 static struct device_attribute notification_device_attr =
 	__ATTR(notification, 0660, show_notification, store_notification);
 
+static ssize_t store_low_battery(struct device *device,
+			   struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &par->low_battery);
+	if (ret)
+		return ret;
+
+	par->low_battery = par->low_battery?1:0;
+
+	return count;
+}
+
+static ssize_t show_low_battery(struct device *device,
+			  struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+
+	return snprintf(buf, PAGE_SIZE, "%lu\n", par->low_battery);
+}
+
+static struct device_attribute low_battery_device_attr =
+	__ATTR(low_battery, 0660, show_low_battery, store_low_battery);
+
 void fbtft_expand_debug_value(unsigned long *debug)
 {
 	switch (*debug & 0x7) {
@@ -448,6 +477,7 @@ static struct device_attribute debug_device_attr =
 void fbtft_sysfs_init(struct fbtft_par *par)
 {
 	device_create_file(par->info->dev, &debug_device_attr);
+	device_create_file(par->info->dev, &low_battery_device_attr);
 	device_create_file(par->info->dev, &rotate_soft_device_attr);
 	device_create_file(par->info->dev, &notification_device_attr);
 	device_create_file(par->info->dev, &overlay_device_attrs[0]);
@@ -458,6 +488,7 @@ void fbtft_sysfs_init(struct fbtft_par *par)
 void fbtft_sysfs_exit(struct fbtft_par *par)
 {
 	device_remove_file(par->info->dev, &debug_device_attr);
+	device_remove_file(par->info->dev, &low_battery_device_attr);
 	device_remove_file(par->info->dev, &rotate_soft_device_attr);
 	device_remove_file(par->info->dev, &notification_device_attr);
 	device_remove_file(par->info->dev, &overlay_device_attrs[0]);

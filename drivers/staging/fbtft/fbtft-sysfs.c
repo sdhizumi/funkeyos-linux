@@ -145,6 +145,144 @@ static struct device_attribute gamma_device_attrs[] = {
 	__ATTR(gamma, 0660, show_gamma_curve, store_gamma_curve),
 };
 
+int fbtft_overlay_parse_str(struct fbtft_par *par, u32 *values,
+			  const char *str, int size)
+{
+	char *str_p, *cur_line = NULL;
+	char *tmp;
+	unsigned long val = 0;
+	int ret = 0;
+	int line_counter, value_counter;
+
+	fbtft_par_dbg(DEBUG_SYSFS, par, "%s() str=%s\n", __func__, str);
+
+	if (!str || !values)
+		return -EINVAL;
+
+	fbtft_par_dbg(DEBUG_SYSFS, par, "%s\n", str);
+
+	tmp = kmemdup(str, size + 1, GFP_KERNEL);
+	if (!tmp)
+		return -ENOMEM;
+
+	/* replace optional separators */
+	str_p = tmp;
+	while (*str_p) {
+		if (*str_p == ',')
+			*str_p = ' ';
+		str_p++;
+	}
+
+	str_p = strim(tmp);
+
+	line_counter = 0;
+	while (str_p) {
+		if (line_counter >= 1) {
+			dev_err(par->info->device, "Overlay: Too many lines\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		cur_line = strsep(&str_p, "\n");
+		value_counter = 0;
+		while (cur_line) {
+			if (value_counter == FBTFT_OVERLAY_NB_VALUES) {
+				dev_err(par->info->device,
+					"Overlay: Too many values\n");
+				ret = -EINVAL;
+				goto out;
+			}
+			ret = get_next_ulong(&cur_line, &val, " ", 10);
+			if (ret)
+				goto out;
+
+			// Check width
+			if (value_counter == 2 && val > par->info->var.xres - 1) {
+				dev_err(par->info->device, "Overlay: width (%lu) > display width (%d)\n",
+					val, par->info->var.xres);
+				ret = -EINVAL;
+				goto out;
+			}
+
+			// Check height
+			if (value_counter == 3 && val > par->info->var.yres - 1) {
+				dev_err(par->info->device, "Overlay: height (%lu) > display height (%d)\n",
+					val, par->info->var.yres);
+				ret = -EINVAL;
+				goto out;
+			}
+
+			values[value_counter] = val;
+			value_counter++;
+		}
+		if (value_counter != FBTFT_OVERLAY_NB_VALUES) {
+			dev_err(par->info->device, "Overlay: Too few values\n");
+			ret = -EINVAL;
+			goto out;
+		}
+
+		// Check x
+		if (values[0] > values[2]) {
+			dev_err(par->info->device, "Overlay: x (%u) > width (%u)\n",
+				values[0], values[2]);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		// Check y
+		if (values[1] > values[3]) {
+			dev_err(par->info->device, "Overlay: y (%u) > height (%u)\n",
+				values[1], values[3]);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		line_counter++;
+	}
+
+out:
+	kfree(tmp);
+	return ret;
+}
+
+static ssize_t store_overlay(struct device *device,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+	u32 tmp_overlay[FBTFT_OVERLAY_NB_VALUES];
+	int ret;
+
+	ret = fbtft_overlay_parse_str(par, tmp_overlay, buf, count);
+	if (ret)
+		return ret;
+
+	mutex_lock(&par->overlay.lock);
+	par->overlay.x = tmp_overlay[0];
+	par->overlay.y = tmp_overlay[1];
+	par->overlay.w = tmp_overlay[2];
+	par->overlay.h = tmp_overlay[3];
+	mutex_unlock(&par->overlay.lock);
+
+	return count;
+}
+
+static ssize_t show_overlay(struct device *device,
+				struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+
+	ssize_t len = sprintf(buf, "%u,%u,%u,%u\n", par->overlay.x, par->overlay.y,
+		par->overlay.w, par->overlay.h);
+
+	return len;
+}
+
+static struct device_attribute overlay_device_attrs[] = {
+	__ATTR(overlay, 0660, show_overlay, store_overlay),
+};
+
 void fbtft_expand_rotate_soft_value(unsigned long *rotate_soft)
 {
 	switch (*rotate_soft) {
@@ -202,6 +340,52 @@ static ssize_t show_rotate_soft(struct device *device,
 
 static struct device_attribute rotate_soft_device_attr =
 	__ATTR(rotate_soft, 0660, show_rotate_soft, store_rotate_soft);
+
+static ssize_t store_notification(struct device *device,
+			   struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+	char *tmp;
+
+	fbtft_par_dbg(DEBUG_SYSFS, par, "%s(), count=%d, str=%s\n", __func__, count, buf);
+	//printk("%s(), count=%d, str=%s\n", __func__, count, buf);
+
+	tmp = kmemdup(buf, count + 1, GFP_KERNEL);
+	if (!tmp)
+		return -ENOMEM;
+
+	/* Clear notif buffer if empty string */
+	if (!strcmp(buf, "clear")){
+		fbtft_par_dbg(DEBUG_SYSFS, par, "Clearing notif buffer\n");
+		par->notification[0] = 0;
+	}
+	else{
+		strncpy(par->notification, tmp, FBTFT_NOTIF_MAX_SIZE);
+	}
+
+	/* Schedule deferred_io to update display (no-op if already on queue)*/
+	if (!par->spi_async_mode){
+		par->dirty_lines_start = 0;
+		par->dirty_lines_end = par->info->var.yres - 1;
+		schedule_delayed_work(&par->info->deferred_work, par->info->fbdefio->delay);
+	}
+
+	return count;
+}
+
+static ssize_t show_notification(struct device *device,
+			  struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", par->notification);
+}
+
+static struct device_attribute notification_device_attr =
+	__ATTR(notification, 0660, show_notification, store_notification);
 
 void fbtft_expand_debug_value(unsigned long *debug)
 {
@@ -265,6 +449,8 @@ void fbtft_sysfs_init(struct fbtft_par *par)
 {
 	device_create_file(par->info->dev, &debug_device_attr);
 	device_create_file(par->info->dev, &rotate_soft_device_attr);
+	device_create_file(par->info->dev, &notification_device_attr);
+	device_create_file(par->info->dev, &overlay_device_attrs[0]);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_create_file(par->info->dev, &gamma_device_attrs[0]);
 }
@@ -273,6 +459,8 @@ void fbtft_sysfs_exit(struct fbtft_par *par)
 {
 	device_remove_file(par->info->dev, &debug_device_attr);
 	device_remove_file(par->info->dev, &rotate_soft_device_attr);
+	device_remove_file(par->info->dev, &notification_device_attr);
+	device_remove_file(par->info->dev, &overlay_device_attrs[0]);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_remove_file(par->info->dev, &gamma_device_attrs[0]);
 }

@@ -243,6 +243,14 @@ struct fbtft_par {
 		int num_values;
 		int num_curves;
 	} gamma;
+	struct {
+		struct mutex lock;
+		u32 x;
+		u32 y;
+		u32 w;
+		u32 h;
+	} overlay;
+	char notification[FBTFT_NOTIF_MAX_SIZE+1];
 	unsigned long debug;
 	bool first_update_done;
 	ktime_t update_time;

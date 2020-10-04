@@ -6,6 +6,7 @@
 #include <linux/delay.h> /* usleep_range */
 #include <video/mipi_display.h>
 #include "fbtft.h"
+#include "fb_text.h"
 
 /*****************************************************************************
  *

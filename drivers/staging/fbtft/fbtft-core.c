@@ -43,6 +43,7 @@
 #include <linux/pagemap.h>
 
 #include "fbtft.h"
+#include "fb_text.h"
 #include "internal.h"
 
 static unsigned long debug;
@@ -541,6 +542,14 @@ void fbtft_post_process_screen(struct fbtft_par *par, unsigned int dirty_lines_s
 		par->vmem_ptr = par->vmem_post_process;
 		screen_post_process = true;
 	}
+	if (par->notification[0]) {
+		if (y_notif < dirty_lines_start)
+			dirty_lines_start = y_notif;
+		if (y_notif + MONACO_HEIGHT > dirty_lines_end)
+			dirty_lines_end = y_notif + MONACO_HEIGHT;
+		par->vmem_ptr = par->vmem_post_process;
+		screen_post_process = true;
+	}
 
 	/* Post process */
 	if (screen_post_process) {
@@ -548,6 +557,19 @@ void fbtft_post_process_screen(struct fbtft_par *par, unsigned int dirty_lines_s
 		memcpy(par->vmem_post_process + dirty_lines_start * par->info->fix.line_length,
 			par->info->screen_buffer + dirty_lines_start * par->info->fix.line_length,
 			(dirty_lines_end-dirty_lines_start+1) * par->info->fix.line_length);
+
+		/* Notifications */
+		if (par->notification[0]) {
+			x_notif = 0;
+			y_notif = 0;
+			basic_text_out16_bg((u16 *)par->vmem_post_process, par->info->var.xres, par->info->var.yres,
+				x_notif, y_notif, RGB565(255, 255, 255), RGB565(0, 0, 0), par->notification);
+
+			if (y_notif < dirty_lines_start)
+				dirty_lines_start = y_notif;
+			if (y_notif + MONACO_HEIGHT > dirty_lines_end)
+				dirty_lines_end = y_notif + MONACO_HEIGHT;
+		}
 
 		/* Soft rotation */
 		if (par->pdata->rotate_soft)

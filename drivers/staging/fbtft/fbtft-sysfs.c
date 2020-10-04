@@ -145,6 +145,64 @@ static struct device_attribute gamma_device_attrs[] = {
 	__ATTR(gamma, 0660, show_gamma_curve, store_gamma_curve),
 };
 
+void fbtft_expand_rotate_soft_value(unsigned long *rotate_soft)
+{
+	switch (*rotate_soft) {
+	case 0:
+	case 90:
+	case 180:
+	case 270:
+		break;
+	case 1:
+		*rotate_soft = 90;
+		break;
+	case 2:
+		*rotate_soft = 180;
+		break;
+	case 3:
+		*rotate_soft = 270;
+	default:
+		printk("Wrong Rotate soft value: %lu\n", *rotate_soft);
+		 *rotate_soft = 0;
+		break;
+	}
+}
+
+static ssize_t store_rotate_soft(struct device *device,
+			   struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &par->pdata->rotate_soft);
+	if (ret)
+		return ret;
+	fbtft_expand_rotate_soft_value(&par->pdata->rotate_soft);
+
+	/* Schedule deferred_io to update display (no-op if already on queue)*/
+	if (!par->spi_async_mode){
+		par->dirty_lines_start = 0;
+		par->dirty_lines_end = par->info->var.yres - 1;
+		schedule_delayed_work(&par->info->deferred_work, par->info->fbdefio->delay);
+	}
+
+	return count;
+}
+
+static ssize_t show_rotate_soft(struct device *device,
+			  struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+
+	return snprintf(buf, PAGE_SIZE, "%lu\n", par->pdata->rotate_soft);
+}
+
+static struct device_attribute rotate_soft_device_attr =
+	__ATTR(rotate_soft, 0660, show_rotate_soft, store_rotate_soft);
+
 void fbtft_expand_debug_value(unsigned long *debug)
 {
 	switch (*debug & 0x7) {
@@ -206,6 +264,7 @@ static struct device_attribute debug_device_attr =
 void fbtft_sysfs_init(struct fbtft_par *par)
 {
 	device_create_file(par->info->dev, &debug_device_attr);
+	device_create_file(par->info->dev, &rotate_soft_device_attr);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_create_file(par->info->dev, &gamma_device_attrs[0]);
 }
@@ -213,6 +272,7 @@ void fbtft_sysfs_init(struct fbtft_par *par)
 void fbtft_sysfs_exit(struct fbtft_par *par)
 {
 	device_remove_file(par->info->dev, &debug_device_attr);
+	device_remove_file(par->info->dev, &rotate_soft_device_attr);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_remove_file(par->info->dev, &gamma_device_attrs[0]);
 }

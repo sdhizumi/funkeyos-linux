@@ -463,6 +463,40 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 	}
 }
 
+/* Soft Matrix Rotation - Works only on 2D square matrices */
+void fbtft_rotate_soft(u16 *mat, int size, int rotation)
+{
+	int i, j;
+	u16 temp;
+	int N = size;
+
+#define AT(i, j) 	((i) * N + (j))
+
+	if (rotation == 90) {
+		/* Rotate screen 90° Clockwise */
+		for (i = 0; i < N / 2; i++) {
+			for (j = i; j < N - i - 1; j++) {
+				temp = mat[AT(i, j)];
+				mat[AT(i, j)] = mat[AT(N - 1 - j, i)];
+				mat[AT(N - 1 - j, i)] = mat[AT(N - 1 - i, N - 1 - j)];
+				mat[AT(N - 1 - i, N - 1 - j)] = mat[AT(j, N - 1 - i)];
+				mat[AT(j, N - 1 - i)] = temp;
+			}
+		}
+	} else if (rotation == 270) {
+		/* Rotate screen 270° Clockwise */
+		for (i = 0; i < N / 2; i++) {
+			for (j = i; j < N - i - 1; j++) {
+				temp = mat[AT(i, j)];
+				mat[AT(i, j)] = mat[AT(j, N - 1 - i)];
+				mat[AT(j, N-1-i)] = mat[AT(N - 1 - i, N - 1 - j)];
+				mat[AT(N - 1 - i, N - 1 - j)] = mat[AT(N - 1 - j, i)];
+				mat[AT(N - 1 - j, i)] = temp;
+			}
+		}
+	}
+}
+
 static void fbtft_mkdirty(struct fb_info *info, int y, int height)
 {
 	struct fbtft_par *par = info->par;
@@ -489,6 +523,36 @@ static void fbtft_mkdirty(struct fb_info *info, int y, int height)
 
 	/* Schedule deferred_io to update display (no-op if already on queue)*/
 	schedule_delayed_work(&info->deferred_work, fbdefio->delay);
+}
+
+void fbtft_post_process_screen(struct fbtft_par *par, unsigned int dirty_lines_start, unsigned int dirty_lines_end)
+{
+	int x_notif = 0;
+	int y_notif = 0;
+	bool screen_post_process = false;
+
+	/* Reset default write buffer */
+	par->vmem_ptr = par->info->screen_buffer;
+
+	/* If soft rotation, mark whole screen to update to avoid data non rotated */
+	if (par->pdata->rotate_soft) {
+		dirty_lines_start = 0;
+		dirty_lines_end = par->info->var.yres - 1;
+		par->vmem_ptr = par->vmem_post_process;
+		screen_post_process = true;
+	}
+
+	/* Post process */
+	if (screen_post_process) {
+		/* Copy buffer */
+		memcpy(par->vmem_post_process + dirty_lines_start * par->info->fix.line_length,
+			par->info->screen_buffer + dirty_lines_start * par->info->fix.line_length,
+			(dirty_lines_end-dirty_lines_start+1) * par->info->fix.line_length);
+
+		/* Soft rotation */
+		if (par->pdata->rotate_soft)
+			fbtft_rotate_soft((u16*)par->vmem_post_process, par->info->var.yres, par->pdata->rotate_soft);
+	}
 }
 
 static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
@@ -524,6 +588,8 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 		if (y_high > dirty_lines_end)
 			dirty_lines_end = y_high;
 	}
+
+	fbtft_post_process_screen(par, dirty_lines_start, dirty_lines_end);
 
 	/* Screen upgrade */
 	par->fbtftops.update_display(par, dirty_lines_start, dirty_lines_end);
@@ -1475,6 +1541,7 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 	pdata->display.bpp = fbtft_of_value(node, "bpp");
 	pdata->display.debug = fbtft_of_value(node, "debug");
 	pdata->rotate = fbtft_of_value(node, "rotate");
+	pdata->rotate_soft = fbtft_of_value(node, "rotate_soft");
 	pdata->bgr = of_property_read_bool(node, "bgr");
 	pdata->spi_async_mode = of_property_read_bool(node, "spi_async_mode");
 	pdata->fps = fbtft_of_value(node, "fps");

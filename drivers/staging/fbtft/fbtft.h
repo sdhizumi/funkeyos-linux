@@ -151,6 +151,7 @@ struct fbtft_platform_data {
 	struct fbtft_display display;
 	const struct fbtft_gpio *gpios;
 	unsigned int rotate;
+	unsigned long rotate_soft;
 	bool bgr;
 	bool spi_async_mode;
 	unsigned int fps;
@@ -273,6 +274,9 @@ int fbtft_init_display(struct fbtft_par *par);
 int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
+void fbtft_rotate_soft(u16 *mat, int size, int rotation);
+void fbtft_post_process_screen(struct fbtft_par *par,
+			unsigned int dirty_lines_start, unsigned int dirty_lines_end);
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);

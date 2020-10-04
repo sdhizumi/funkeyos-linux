@@ -136,6 +136,9 @@ int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par)
 
 	// printk("%s\n", __func__);
 
+	/* Post process */
+	fbtft_post_process_screen(par, 0, par->info->var.yres - 1);
+
 	/* Resetting to 0 for incoming cmd init data write */
 	if (gpio_is_valid(par->gpio.dc))
 		gpio_set_value(par->gpio.dc, 0);

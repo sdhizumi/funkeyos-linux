@@ -20,15 +20,18 @@
 #include <linux/spi/spi.h>
 #include <linux/platform_device.h>
 
-#define FBTFT_ONBOARD_BACKLIGHT 2
+#define FBTFT_ONBOARD_BACKLIGHT 	2
 
 #define FBTFT_GPIO_NO_MATCH		0xFFFF
-#define FBTFT_GPIO_NAME_SIZE	32
-#define FBTFT_MAX_INIT_SEQUENCE      512
-#define FBTFT_GAMMA_MAX_VALUES_TOTAL 128
+#define FBTFT_GPIO_NAME_SIZE		32
+#define FBTFT_MAX_INIT_SEQUENCE      	512
+#define FBTFT_GAMMA_MAX_VALUES_TOTAL 	128
+#define FBTFT_OVERLAY_NB_VALUES		4
 
-#define FBTFT_OF_INIT_CMD	BIT(24)
-#define FBTFT_OF_INIT_DELAY	BIT(25)
+#define FBTFT_NOTIF_MAX_SIZE		256
+
+#define FBTFT_OF_INIT_CMD		BIT(24)
+#define FBTFT_OF_INIT_DELAY		BIT(25)
 
 /**
  * struct fbtft_gpio - Structure that holds one pinname to gpio mapping
@@ -70,6 +73,7 @@ struct fbtft_par;
  */
 struct fbtft_ops {
 	int (*write)(struct fbtft_par *par, void *buf, size_t len);
+	int (*write_async)(struct fbtft_par *par, void *buf, size_t len, void (* cb)(void *context));
 	int (*read)(struct fbtft_par *par, void *buf, size_t len);
 	int (*write_vmem)(struct fbtft_par *par, size_t offset, size_t len);
 	void (*write_register)(struct fbtft_par *par, int len, ...);
@@ -148,6 +152,7 @@ struct fbtft_platform_data {
 	const struct fbtft_gpio *gpios;
 	unsigned int rotate;
 	bool bgr;
+	bool spi_async_mode;
 	unsigned int fps;
 	int txbuflen;
 	u8 startbyte;
@@ -212,6 +217,8 @@ struct fbtft_par {
 		size_t len;
 	} txbuf;
 	u8 *buf;
+	u8 *vmem_ptr;
+	u8 *vmem_post_process;
 	u8 startbyte;
 	struct fbtft_ops fbtftops;
 	spinlock_t dirty_lock;
@@ -238,8 +245,11 @@ struct fbtft_par {
 	unsigned long debug;
 	bool first_update_done;
 	ktime_t update_time;
+	long avg_fps;
+	int nb_fps_values;
 	bool bgr;
 	void *extra;
+	bool spi_async_mode;
 };
 
 #define NUMARGS(...)  (sizeof((int[]){__VA_ARGS__})/sizeof(int))
@@ -266,6 +276,7 @@ int fbtft_remove_common(struct device *dev, struct fb_info *info);
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);
+int fbtft_write_spi_async(struct fbtft_par *par, void *buf, size_t len, void (*cb)(void *context));
 int fbtft_write_spi_emulate_9(struct fbtft_par *par, void *buf, size_t len);
 int fbtft_read_spi(struct fbtft_par *par, void *buf, size_t len);
 int fbtft_write_gpio8_wr(struct fbtft_par *par, void *buf, size_t len);
@@ -273,8 +284,10 @@ int fbtft_write_gpio16_wr(struct fbtft_par *par, void *buf, size_t len);
 int fbtft_write_gpio16_wr_latched(struct fbtft_par *par, void *buf, size_t len);
 
 /* fbtft-bus.c */
+int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par);
 int fbtft_write_vmem8_bus8(struct fbtft_par *par, size_t offset, size_t len);
 int fbtft_write_vmem16_bus16(struct fbtft_par *par, size_t offset, size_t len);
+int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t len);
 int fbtft_write_vmem16_bus8(struct fbtft_par *par, size_t offset, size_t len);
 int fbtft_write_vmem16_bus9(struct fbtft_par *par, size_t offset, size_t len);
 void fbtft_write_reg8_bus8(struct fbtft_par *par, int len, ...);
@@ -358,7 +371,7 @@ module_exit(fbtft_driver_module_exit);
 
 /* shorthand debug levels */
 #define DEBUG_LEVEL_1	DEBUG_REQUEST_GPIOS
-#define DEBUG_LEVEL_2	(DEBUG_LEVEL_1 | DEBUG_DRIVER_INIT_FUNCTIONS | DEBUG_TIME_FIRST_UPDATE)
+#define DEBUG_LEVEL_2	(DEBUG_LEVEL_1 | DEBUG_DRIVER_INIT_FUNCTIONS | DEBUG_TIME_FIRST_UPDATE | DEBUG_TIME_EACH_UPDATE)
 #define DEBUG_LEVEL_3	(DEBUG_LEVEL_2 | DEBUG_RESET | DEBUG_INIT_DISPLAY | DEBUG_BLANK | DEBUG_REQUEST_GPIOS | DEBUG_FREE_GPIOS | DEBUG_VERIFY_GPIOS | DEBUG_BACKLIGHT | DEBUG_SYSFS)
 #define DEBUG_LEVEL_4	(DEBUG_LEVEL_2 | DEBUG_FB_READ | DEBUG_FB_WRITE | DEBUG_FB_FILLRECT | DEBUG_FB_COPYAREA | DEBUG_FB_IMAGEBLIT | DEBUG_FB_BLANK)
 #define DEBUG_LEVEL_5	(DEBUG_LEVEL_3 | DEBUG_UPDATE_DISPLAY)

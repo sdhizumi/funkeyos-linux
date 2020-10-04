@@ -167,8 +167,11 @@ void fbtft_expand_debug_value(unsigned long *debug)
 		*debug |= DEBUG_LEVEL_6;
 		break;
 	case 7:
-		*debug = 0xFFFFFFFF;
+		*debug = DEBUG_LEVEL_7;
 		break;
+	/*case 8:
+		*debug = DEBUG_LEVEL_8; // FPS
+		break;*/
 	}
 }
 

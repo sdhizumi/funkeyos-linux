@@ -177,8 +177,9 @@
                reg = <0>;
                spi-max-frequency = <50000000>;
                txbuflen = <115202>;
+               spi_async_mode = "true";
                rotate = <0>;
-               fps = <50>;
+               fps = <100>;
                buswidth = <8>;
                reset-gpios = <&pio 1 2 GPIO_ACTIVE_HIGH>;	//PB2
                dc-gpios = <&pio 2 0 GPIO_ACTIVE_LOW>;		//PC0 (MISO)

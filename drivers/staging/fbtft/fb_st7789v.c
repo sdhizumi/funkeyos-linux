@@ -152,8 +152,16 @@ static int init_display(struct fbtft_par *par)
 	/* Display Inversion of colors */
 	write_reg(par, 0x21);
 
-	/* 39Hz refresh rate */
-	write_reg(par, 0xC6,0x1F);
+	/* refresh rate */
+	//write_reg(par, 0xC6,0x1F); //39Hz
+	//write_reg(par, 0xC6,0x1A); //44Hz
+	//write_reg(par, 0xC6,0x17); //48Hz
+	//write_reg(par, 0xC6,0x15); //50Hz
+	//write_reg(par, 0xC6,0x12); //55Hz
+	//write_reg(par, 0xC6,0x10); //58Hz
+	//write_reg(par, 0xC6,0x0F); //60Hz
+	write_reg(par, 0xC6,0x09); //60Hz
+	//write_reg(par, 0xC6,0x03); //99Hz
 
 	write_reg(par, MIPI_DCS_SET_DISPLAY_ON);
 

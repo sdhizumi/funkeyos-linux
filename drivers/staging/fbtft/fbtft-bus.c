@@ -3,6 +3,8 @@
 #include <linux/errno.h>
 #include <linux/gpio.h>
 #include <linux/spi/spi.h>
+#include <linux/delay.h> /* usleep_range */
+#include <video/mipi_display.h>
 #include "fbtft.h"
 
 /*****************************************************************************
@@ -105,6 +107,141 @@ void fbtft_write_reg8_bus9(struct fbtft_par *par, int len, ...)
 }
 EXPORT_SYMBOL(fbtft_write_reg8_bus9);
 
+static void spi_complete_cmd_init_data_write(void *arg)
+{
+	struct fbtft_par *par = (struct fbtft_par *)arg;
+	// printk("%s\n", __func__);
+
+	/* Start new data write (full display) */
+	int len = par->info->var.yres * par->info->fix.line_length;
+	fbtft_write_vmem16_bus8_async(par, 0, len);
+}
+
+static void spi_complete_data_write(void *arg)
+{
+	struct fbtft_par *par = (struct fbtft_par *)arg;
+	// printk("%s\n", __func__);
+
+	/* sleep */
+	// msleep(1);
+
+	/* Start sending cmd init data */
+	fbtft_write_init_cmd_data_transfers(par);
+}
+
+int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par)
+{
+	static u8 init_data_cmd_buf = MIPI_DCS_WRITE_MEMORY_START;
+	int ret = 0;
+
+	// printk("%s\n", __func__);
+
+	/* Resetting to 0 for incoming cmd init data write */
+	if (gpio_is_valid(par->gpio.dc))
+		gpio_set_value(par->gpio.dc, 0);
+
+	/* Start sending cmd init data */
+	ret = par->fbtftops.write_async(par, &init_data_cmd_buf, 1,
+					spi_complete_cmd_init_data_write);
+	if (ret < 0)
+		dev_err(par->info->device, "write() failed and returned %d\n", ret);
+
+	/* Debug fps */
+#define FPS_DEBUG 0
+#if FPS_DEBUG
+	ktime_t ts_now = ktime_get();
+
+	/* First measurement */
+	if (!ktime_to_ns(par->update_time))
+		par->update_time = ts_now;
+
+	long fps = ktime_us_delta(ts_now, par->update_time);
+	par->update_time = ts_now;
+	fps = fps ? 1000000 / fps : 0;
+
+	if (fps) {
+		par->avg_fps += fps;
+		par->nb_fps_values++;
+
+		if (par->nb_fps_values == 200) {
+			dev_info(par->info->device, "Display update: fps=%ld\n",
+				 par->avg_fps / par->nb_fps_values);
+			par->avg_fps = 0;
+			par->nb_fps_values = 0;
+		}
+	}
+
+#endif // FPS_DEBUG
+
+	return ret;
+}
+EXPORT_SYMBOL(fbtft_write_init_cmd_data_transfers);
+
+/*****************************************************************************
+ *
+ *   int (*write_vmem)(struct fbtft_par *par);
+ *
+ *****************************************************************************/
+
+/* 16 bit pixel over 8-bit databus */
+int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t len)
+{
+	u16 *vmem16;
+	__be16 *txbuf16 = par->txbuf.buf;
+	size_t remain;
+	size_t to_copy;
+	size_t tx_array_size;
+	int i;
+	int ret = 0;
+	size_t startbyte_size = 0;
+
+	fbtft_par_dbg(DEBUG_WRITE_VMEM, par, "%s(offset=%zu, len=%zu)\n",
+		__func__, offset, len);
+
+	remain = len / 2;
+	//vmem16 = (u16 *)(par->info->screen_buffer + offset);
+	//vmem16 = (u16 *)(par->vmem_post_process + offset);
+	vmem16 = (u16 *)(par->vmem_ptr + offset);
+
+	if (par->gpio.dc != -1)
+		gpio_set_value(par->gpio.dc, 1);
+
+	/* non buffered write */
+	if (!par->txbuf.buf){
+		//return par->fbtftops.write(par, vmem16, len);
+		return par->fbtftops.write_async(par, vmem16, len, spi_complete_data_write);
+	}
+
+	/* buffered write */
+	tx_array_size = par->txbuf.len / 2;
+
+	if (par->startbyte) {
+		txbuf16 = par->txbuf.buf + 1;
+		tx_array_size -= 2;
+		*(u8 *)(par->txbuf.buf) = par->startbyte | 0x2;
+		startbyte_size = 1;
+	}
+
+	while (remain) {
+		to_copy = min(tx_array_size, remain);
+		dev_dbg(par->info->device, "    to_copy=%zu, remain=%zu\n",
+						to_copy, remain - to_copy);
+
+		for (i = 0; i < to_copy; i++)
+			txbuf16[i] = cpu_to_be16(vmem16[i]);
+
+		vmem16 = vmem16 + to_copy;
+		ret = par->fbtftops.write_async(par, par->txbuf.buf,
+						startbyte_size + to_copy * 2, spi_complete_data_write);
+		if (ret < 0)
+			return ret;
+		remain -= to_copy;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(fbtft_write_vmem16_bus8_async);
+
 /*****************************************************************************
  *
  *   int (*write_vmem)(struct fbtft_par *par);
@@ -127,7 +264,7 @@ int fbtft_write_vmem16_bus8(struct fbtft_par *par, size_t offset, size_t len)
 		__func__, offset, len);
 
 	remain = len / 2;
-	vmem16 = (u16 *)(par->info->screen_buffer + offset);
+	vmem16 = (u16 *)(par->vmem_ptr + offset);
 
 	if (par->gpio.dc != -1)
 		gpio_set_value(par->gpio.dc, 1);

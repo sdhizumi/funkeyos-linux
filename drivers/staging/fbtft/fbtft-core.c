@@ -35,6 +35,12 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <video/mipi_display.h>
+#include <linux/hrtimer.h>
+#include <linux/list.h>
+
+/* to support deferred IO */
+#include <linux/rmap.h>
+#include <linux/pagemap.h>
 
 #include "fbtft.h"
 #include "internal.h"
@@ -331,13 +337,27 @@ EXPORT_SYMBOL(fbtft_unregister_backlight);
 static void fbtft_set_addr_win(struct fbtft_par *par, int xs, int ys, int xe,
 			       int ye)
 {
-	write_reg(par, MIPI_DCS_SET_COLUMN_ADDRESS,
-		  (xs >> 8) & 0xFF, xs & 0xFF, (xe >> 8) & 0xFF, xe & 0xFF);
+	static int prev_xs = -1;
+	static int prev_ys = -1;
+	static int prev_xe = -1;
+	static int prev_ye = -1;
 
-	write_reg(par, MIPI_DCS_SET_PAGE_ADDRESS,
-		  (ys >> 8) & 0xFF, ys & 0xFF, (ye >> 8) & 0xFF, ye & 0xFF);
+	/* Check if values need to be sent */
+	if (prev_xs != xs || prev_ys != ys || prev_xe != xe || prev_ye != ye) {
 
-	write_reg(par, MIPI_DCS_WRITE_MEMORY_START);
+		// Save prev bounding box values
+		prev_xs = xs;
+		prev_ys = ys;
+		prev_xe = xe;
+		prev_ye = ye;
+
+		/* Set new bounding Box */
+		write_reg(par, MIPI_DCS_SET_COLUMN_ADDRESS,
+			  (xs >> 8) & 0xFF, xs & 0xFF, (xe >> 8) & 0xFF, xe & 0xFF);
+
+		write_reg(par, MIPI_DCS_SET_PAGE_ADDRESS,
+			  (ys >> 8) & 0xFF, ys & 0xFF, (ye >> 8) & 0xFF, ye & 0xFF);
+	}
 }
 
 static void fbtft_reset(struct fbtft_par *par)
@@ -356,7 +376,7 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 {
 	size_t offset, len;
 	ktime_t ts_start, ts_end;
-	long fps, throughput;
+	long fps, throughput, write_time;
 	bool timeit = false;
 	int ret = 0;
 
@@ -372,6 +392,10 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 
 	/* Sanity checks */
 	if (start_line > end_line) {
+
+		/* Special case: no update needed */
+		if (start_line == (par->info->var.yres - 1) || end_line == 0)
+			return;
 		dev_warn(par->info->device,
 			 "%s: start_line=%u is larger than end_line=%u. Shouldn't happen, will do full display update\n",
 			 __func__, start_line, end_line);
@@ -388,16 +412,19 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 		end_line = par->info->var.yres - 1;
 	}
 
-	fbtft_par_dbg(DEBUG_UPDATE_DISPLAY, par, "%s(start_line=%u, end_line=%u)\n",
-		      __func__, start_line, end_line);
+	/* Reset write Window and init write cmd */
+	if (par->fbtftops.set_addr_win) {
 
-	// Carefull removing this. this will work only if the full
-	// screen is updated all at once
-	if (par->fbtftops.set_addr_win){
+		fbtft_par_dbg(DEBUG_UPDATE_DISPLAY, par, "%s(start_line=%u, end_line=%u)\n",
+			      __func__, start_line, end_line);
 		par->fbtftops.set_addr_win(par, 0, start_line,
 				par->info->var.xres - 1, end_line);
 	}
 
+	/* Send cmd to start transfer */
+	write_reg(par, MIPI_DCS_WRITE_MEMORY_START);
+
+	/* Send data over SPI */
 	offset = start_line * par->info->fix.line_length;
 	len = (end_line - start_line + 1) * par->info->fix.line_length;
 	ret = par->fbtftops.write_vmem(par, offset, len);
@@ -415,13 +442,23 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 		par->update_time = ts_start;
 		fps = fps ? 1000000 / fps : 0;
 
-		throughput = ktime_us_delta(ts_end, ts_start);
-		throughput = throughput ? (len * 1000) / throughput : 0;
+		write_time = ktime_us_delta(ts_end, ts_start);
+		throughput = write_time ? (len * 1000) / write_time : 0;
 		throughput = throughput * 1000 / 1024;
 
-		dev_info(par->info->device,
-			 "Display update: %ld kB/s, fps=%ld\n",
-			 throughput, fps);
+		if (fps) {
+			par->avg_fps += fps;
+			par->nb_fps_values++;
+
+			if (par->nb_fps_values == 120) {
+				dev_info(par->info->device,
+					 "Display update: %ld kB/s, write_time: %ldus, fps=%ld\n",
+					 throughput, write_time, par->avg_fps/par->nb_fps_values);
+				par->avg_fps = 0;
+				par->nb_fps_values = 0;
+			}
+		}
+
 		par->first_update_done = true;
 	}
 }
@@ -430,6 +467,11 @@ static void fbtft_mkdirty(struct fb_info *info, int y, int height)
 {
 	struct fbtft_par *par = info->par;
 	struct fb_deferred_io *fbdefio = info->fbdefio;
+
+	/* This disables fbtft's defered io, useful in spi_asyn mode or
+	if any other driver handles screens updates instead of fbtft */
+	if (par->spi_async_mode)
+		return;
 
 	/* special case, needed ? */
 	if (y == -1) {
@@ -473,8 +515,8 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 		y_low = index / info->fix.line_length;
 		y_high = (index + PAGE_SIZE - 1) / info->fix.line_length;
 		dev_dbg(info->device,
-			"page->index=%lu y_low=%d y_high=%d\n",
-			page->index, y_low, y_high);
+			"count=%d, page->index=%lu y_low=%d y_high=%d\n",
+			count, page->index, y_low, y_high);
 		if (y_high > info->var.yres - 1)
 			y_high = info->var.yres - 1;
 		if (y_low < dirty_lines_start)
@@ -483,8 +525,8 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 			dirty_lines_end = y_high;
 	}
 
-	par->fbtftops.update_display(info->par,
-					dirty_lines_start, dirty_lines_end);
+	/* Screen upgrade */
+	par->fbtftops.update_display(par, dirty_lines_start, dirty_lines_end);
 }
 
 static void fbtft_fb_fillrect(struct fb_info *info,
@@ -540,6 +582,127 @@ static ssize_t fbtft_fb_write(struct fb_info *info, const char __user *buf,
 	par->fbtftops.mkdirty(info, -1, 0);
 
 	return res;
+}
+
+static struct page *fb_deferred_io_page(struct fb_info *info, unsigned long offs)
+{
+	void *screen_base = (void __force *) info->screen_base;
+	struct page *page;
+
+	if (is_vmalloc_addr(screen_base + offs))
+		page = vmalloc_to_page(screen_base + offs);
+	else
+		page = pfn_to_page((info->fix.smem_start + offs) >> PAGE_SHIFT);
+
+	return page;
+}
+
+/* this is to find and return the vmalloc-ed fb pages */
+static int fb_deferred_io_fault(struct vm_fault *vmf)
+{
+	unsigned long offset;
+	struct page *page;
+	struct fb_info *info = vmf->vma->vm_private_data;
+
+	offset = vmf->pgoff << PAGE_SHIFT;
+	if (offset >= info->fix.smem_len)
+		return VM_FAULT_SIGBUS;
+
+	page = fb_deferred_io_page(info, offset);
+	if (!page)
+		return VM_FAULT_SIGBUS;
+
+	get_page(page);
+
+	if (vmf->vma->vm_file)
+		page->mapping = vmf->vma->vm_file->f_mapping;
+	else
+		printk(KERN_ERR "no mapping available\n");
+
+	BUG_ON(!page->mapping);
+	page->index = vmf->pgoff;
+
+	vmf->page = page;
+	return 0;
+}
+
+/* vm_ops->page_mkwrite handler */
+static int fb_deferred_io_mkwrite(struct vm_fault *vmf)
+{
+	struct page *page = vmf->page;
+	struct fb_info *info = vmf->vma->vm_private_data;
+	struct fb_deferred_io *fbdefio = info->fbdefio;
+	struct page *cur;
+	struct fbtft_par *par = info->par;
+
+	/* This disables fbtft's defered io, useful in spi_async mode or
+	if any other driver handles screens updates instead of fbtft */
+	if (par->spi_async_mode)
+		return VM_FAULT_LOCKED;
+
+	/* this is a callback we get when userspace first tries to
+	write to the page. we schedule a workqueue. that workqueue
+	will eventually mkclean the touched pages and execute the
+	deferred framebuffer IO. then if userspace touches a page
+	again, we repeat the same scheme */
+
+	file_update_time(vmf->vma->vm_file);
+
+	/* protect against the workqueue changing the page list */
+	mutex_lock(&fbdefio->lock);
+
+	/* first write in this cycle, notify the driver */
+	if (fbdefio->first_io && list_empty(&fbdefio->pagelist))
+		fbdefio->first_io(info);
+
+	/*
+	 * We want the page to remain locked from ->page_mkwrite until
+	 * the PTE is marked dirty to avoid page_mkclean() being called
+	 * before the PTE is updated, which would leave the page ignored
+	 * by defio.
+	 * Do this by locking the page here and informing the caller
+	 * about it with VM_FAULT_LOCKED.
+	 */
+	lock_page(page);
+
+	/* we loop through the pagelist before adding in order
+	to keep the pagelist sorted */
+	list_for_each_entry(cur, &fbdefio->pagelist, lru) {
+		/* this check is to catch the case where a new
+		process could start writing to the same page
+		through a new pte. this new access can cause the
+		mkwrite even when the original ps's pte is marked
+		writable */
+		if (unlikely(cur == page))
+			goto page_already_added;
+		else if (cur->index > page->index)
+			break;
+	}
+
+	list_add_tail(&page->lru, &cur->lru);
+
+page_already_added:
+	mutex_unlock(&fbdefio->lock);
+
+	/* Update by timers */
+	schedule_delayed_work(&info->deferred_work, fbdefio->delay);
+
+	return VM_FAULT_LOCKED;
+}
+
+static const struct vm_operations_struct fb_deferred_io_vm_ops = {
+	.fault		= fb_deferred_io_fault,
+	.page_mkwrite	= fb_deferred_io_mkwrite,
+};
+
+static int fbtft_fb_deferred_io_mmap(struct fb_info *info, struct vm_area_struct *vma)
+{
+	vma->vm_ops = &fb_deferred_io_vm_ops;
+	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+	if (!(info->flags & FBINFO_VIRTFB))
+		vma->vm_flags |= VM_IO;
+	vma->vm_private_data = info;
+	return 0;
 }
 
 /* from pxafb.c */
@@ -607,6 +770,8 @@ static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
 {
 	if (src->write)
 		dst->write = src->write;
+	if (src->write_async)
+		dst->write_async = src->write_async;
 	if (src->read)
 		dst->read = src->read;
 	if (src->write_vmem)
@@ -668,6 +833,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	struct fb_ops *fbops = NULL;
 	struct fb_deferred_io *fbdefio = NULL;
 	u8 *vmem = NULL;
+	u8 *vmem_post_process = NULL;
 	void *txbuf = NULL;
 	void *buf = NULL;
 	unsigned int width;
@@ -740,6 +906,10 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	if (!vmem)
 		goto alloc_fail;
 
+	vmem_post_process = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
+	if (!vmem_post_process)
+		goto alloc_fail;
+
 	fbops = devm_kzalloc(dev, sizeof(struct fb_ops), GFP_KERNEL);
 	if (!fbops)
 		goto alloc_fail;
@@ -783,6 +953,9 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	fbdefio->deferred_io =     fbtft_deferred_io;
 	fb_deferred_io_init(info);
 
+	// Overload
+	info->fbops->fb_mmap = fbtft_fb_deferred_io_mmap;
+
 	strncpy(info->fix.id, dev->driver->name, 16);
 	info->fix.type =           FB_TYPE_PACKED_PIXELS;
 	info->fix.visual =         FB_VISUAL_TRUECOLOR;
@@ -815,11 +988,14 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 
 	par = info->par;
 	par->info = info;
+	par->vmem_post_process = vmem_post_process;
+	par->vmem_ptr = par->info->screen_buffer;
 	par->pdata = pdata;
 	par->debug = display->debug;
 	par->buf = buf;
 	spin_lock_init(&par->dirty_lock);
 	par->bgr = pdata->bgr;
+	par->spi_async_mode = pdata->spi_async_mode;
 	par->startbyte = pdata->startbyte;
 	par->init_sequence = init_sequence;
 	par->gamma.curves = gamma_curves;
@@ -868,6 +1044,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 
 	/* default fbtft operations */
 	par->fbtftops.write = fbtft_write_spi;
+	par->fbtftops.write_async = fbtft_write_spi_async;
 	par->fbtftops.read = fbtft_read_spi;
 	par->fbtftops.write_vmem = fbtft_write_vmem16_bus8;
 	par->fbtftops.write_register = fbtft_write_reg8_bus8;
@@ -1299,6 +1476,7 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 	pdata->display.debug = fbtft_of_value(node, "debug");
 	pdata->rotate = fbtft_of_value(node, "rotate");
 	pdata->bgr = of_property_read_bool(node, "bgr");
+	pdata->spi_async_mode = of_property_read_bool(node, "spi_async_mode");
 	pdata->fps = fbtft_of_value(node, "fps");
 	pdata->txbuflen = fbtft_of_value(node, "txbuflen");
 	pdata->startbyte = fbtft_of_value(node, "startbyte");
@@ -1436,6 +1614,10 @@ int fbtft_probe_common(struct fbtft_display *display,
 	ret = fbtft_register_framebuffer(info);
 	if (ret < 0)
 		goto out_release;
+
+	if (par->spi_async_mode)
+		/* Start constant Display update using spi async */
+		fbtft_write_init_cmd_data_transfers(par);
 
 	return 0;
 

@@ -63,6 +63,11 @@
 		default-brightness-level = <11>;
 		power-supply = <&reg_vcc5v0>;
 	};
+
+	bat: battery {
+		compatible = "simple-battery";
+		constant_charge_current_max_microamp = <400000>;
+	};
 };
 
 &codec {
@@ -121,6 +126,7 @@
 
 &battery_power_supply {
 	status = "okay";
+	monitored-battery = <&bat>;
 };
 
 &usb_power_supply {

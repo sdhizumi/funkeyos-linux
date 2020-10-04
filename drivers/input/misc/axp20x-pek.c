@@ -214,10 +214,14 @@ static irqreturn_t axp20x_pek_irq(int irq, void *pwr)
 	 * The power-button is connected to ground so a falling edge (dbf)
 	 * means it is pressed.
 	 */
-	if (irq == axp20x_pek->irq_dbf)
-		input_report_key(idev, KEY_POWER, true);
-	else if (irq == axp20x_pek->irq_dbr)
-		input_report_key(idev, KEY_POWER, false);
+	if (irq == axp20x_pek->irq_dbf){
+		//input_report_key(idev, KEY_POWER, true);
+		input_report_key(idev, KEY_Q, true);
+	}
+	else if (irq == axp20x_pek->irq_dbr){
+		//input_report_key(idev, KEY_POWER, false);
+		input_report_key(idev, KEY_Q, false);
+	}
 
 	input_sync(idev);
 
@@ -259,7 +263,7 @@ static int axp20x_pek_probe_input_device(struct axp20x_pek *axp20x_pek,
 	idev->phys = "m1kbd/input2";
 	idev->dev.parent = &pdev->dev;
 
-	input_set_capability(idev, EV_KEY, KEY_POWER);
+	input_set_capability(idev, EV_KEY, KEY_Q);
 
 	input_set_drvdata(idev, axp20x_pek);
 

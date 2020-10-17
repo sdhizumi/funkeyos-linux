@@ -24,10 +24,17 @@
 #include "fbtft.h"
 
 #define DRVNAME "fb_st7789v"
+//#define SAEF_SETTINGS
 
-#define DEFAULT_GAMMA \
-	"d0 08 0d 0a 0a 0a 33 33 48 15 0d 0b 29 2e\n" \
-	"d0 07 0d 0b 0a 15 32 33 48 15 0c 0b 29 2d"
+#ifndef SAEF_SETTINGS
+	#define DEFAULT_GAMMA \
+		"f0 08 0e 09 08 04 2f 33 45 36 13 12 2a 2d\n" \
+		"f0 0e 12 0c 0a 15 2e 32 44 39 17 18 2b 2f"
+#else
+	#define DEFAULT_GAMMA \
+		"f0 19 1e 0A 09 15 3D 44 51 19 14 13 2c 31\n" \
+		"f0 18 1E 0A 09 25 3F 43 52 19 14 13 2c 31"
+#endif
 
 /**
  * enum st7789v_command - ST7789V display controller commands
@@ -87,27 +94,30 @@ enum st7789v_command {
  */
 static int init_display(struct fbtft_par *par)
 {
+#ifndef SAEF_SETTINGS
 	/* turn off sleep mode */
-	/*write_reg(par, 0x11);
+	write_reg(par, 0x11);
 	mdelay(120);
 
 	write_reg(par, 0x36, 0x00);
 	write_reg(par, 0x3A, 0x05);
 
 	write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);
-	write_reg(par, 0xB7,0x35);
-	write_reg(par, 0xBB,0x1A);
-	write_reg(par, 0xC0,0x2C);
+	write_reg(par, 0xB7,0x00);
+	write_reg(par, 0xBB,0x36);
+	//write_reg(par, 0xC0,0x2C);
 	write_reg(par, 0xC2,0x01);
-	write_reg(par, 0xC3,0x0B);
+	write_reg(par, 0xC3,0x13);
 	write_reg(par, 0xC4,0x20);
 	write_reg(par, 0xC6,0x0F);
+	write_reg(par, 0xD6,0xA1);
 	write_reg(par, 0xD0,0xA4,0xA1);
-	write_reg(par, 0x21);
+	/*write_reg(par, 0x21);
 	write_reg(par, 0xE0,0x00,0x19,0x1E,0x0A,0x09,0x15,0x3D,0x44,0x51,0x12,0x03,0x00,0x3F,0x3F);
 	write_reg(par, 0xE1,0x00,0x18,0x1E,0x0A,0x09,0x25,0x3F,0x43,0x52,0x33,0x03,0x00,0x3F,0x3F);
 	write_reg(par, 0x29);*/
 
+#else
 	/* turn off sleep mode */
 	write_reg(par, MIPI_DCS_EXIT_SLEEP_MODE);
 	mdelay(120);
@@ -150,6 +160,7 @@ static int init_display(struct fbtft_par *par)
 	 * VDS = 2.3V
 	 */
 	write_reg(par, PWCTRL1, 0xA4, 0xA1);
+#endif
 
 	/* Display Inversion of colors */
 	write_reg(par, 0x21);

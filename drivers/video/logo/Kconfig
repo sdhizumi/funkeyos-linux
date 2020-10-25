@@ -42,6 +42,10 @@ config LOGO_DEC_CLUT224
 	depends on MACH_DECSTATION || ALPHA
 	default y
 
+config LOGO_FUNKEY_CLUT224
+	bool "224-color FunKey Linux logo"
+	default y
+
 config LOGO_MAC_CLUT224
 	bool "224-color Macintosh Linux logo"
 	depends on MAC

@@ -90,6 +90,10 @@ const struct linux_logo * __ref fb_find_logo(int depth)
 		/* FunKey Linux logo */
 		logo = &logo_funkey_clut224;
 #endif
+#ifdef CONFIG_LOGO_FUNKEY_RECOVERY_CLUT224
+		/* FunKey Recovery Linux logo */
+		logo = &logo_funkey_recovery_clut224;
+#endif
 #ifdef CONFIG_LOGO_MAC_CLUT224
 		/* Macintosh Linux logo on m68k */
 		if (MACH_IS_MAC)

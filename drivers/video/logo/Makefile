@@ -8,7 +8,8 @@ obj-$(CONFIG_LOGO_LINUX_CLUT224)	+= logo_linux_clut224.o
 obj-$(CONFIG_LOGO_BLACKFIN_CLUT224)	+= logo_blackfin_clut224.o
 obj-$(CONFIG_LOGO_BLACKFIN_VGA16)	+= logo_blackfin_vga16.o
 obj-$(CONFIG_LOGO_DEC_CLUT224)		+= logo_dec_clut224.o
-obj-$(CONFIG_LOGO_FUNKE_CLUT224)	+= logo_funkey_clut224.o
+obj-$(CONFIG_LOGO_FUNKEY_CLUT224)	+= logo_funkey_clut224.o
+obj-$(CONFIG_LOGO_FUNKEY_RECOVERY_CLUT224)	+= logo_funkey_recovery_clut224.o
 obj-$(CONFIG_LOGO_MAC_CLUT224)		+= logo_mac_clut224.o
 obj-$(CONFIG_LOGO_PARISC_CLUT224)	+= logo_parisc_clut224.o
 obj-$(CONFIG_LOGO_SGI_CLUT224)		+= logo_sgi_clut224.o
@@ -17,7 +18,6 @@ obj-$(CONFIG_LOGO_SUPERH_MONO)		+= logo_superh_mono.o
 obj-$(CONFIG_LOGO_SUPERH_VGA16)		+= logo_superh_vga16.o
 obj-$(CONFIG_LOGO_SUPERH_CLUT224)	+= logo_superh_clut224.o
 obj-$(CONFIG_LOGO_M32R_CLUT224)		+= logo_m32r_clut224.o
-obj-$(CONFIG_LOGO_FUNKEY_CLUT224)       += logo_funkey_clut224.o
 
 obj-$(CONFIG_SPU_BASE)			+= logo_spe_clut224.o
 

@@ -1650,7 +1650,9 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	}
 #endif //DEBUG_TE_IRQ_COUNT
 
-	fbtft_start_new_screen_transfer_async(pdata->par);
+	if(pdata->par->ready_for_spi_async){
+		fbtft_start_new_screen_transfer_async(pdata->par);
+	}
 
     return IRQ_HANDLED;
 }
@@ -1661,7 +1663,7 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 {
 	struct device_node *node = dev->of_node;
 	struct fbtft_platform_data *pdata;
-	int gpio, irq_id, err;
+	int gpio, err;
 	enum of_gpio_flags of_flags;
 	char *te_irq_name;
 
@@ -1697,8 +1699,9 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 		pdata->display.fbtftops.init_display = fbtft_init_display_dt;
 	pdata->display.fbtftops.request_gpios = fbtft_request_gpios_dt;
 
-	/* TE signal for Vsync */
-	pdata->te_irq = false;
+	/* TE signal for Vsync - Checking if GPIO is correct */
+	pdata->te_irq_enabled = false;
+	pdata->te_irq_id = 0;
 	te_irq_name = "te-irq";
 	if (of_find_property(node, te_irq_name, NULL)) {
 		gpio = of_get_named_gpio_flags(node, te_irq_name, 0, &of_flags);
@@ -1709,21 +1712,13 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 		else{
 			pr_info("%s: '%s' = GPIO%d\n", __func__, te_irq_name, gpio);
 
-			irq_id = gpio_to_irq(gpio);
-			if(irq_id < 0) {
-		        dev_err(dev,"%s - Unable to request IRQ: %d\n", __func__, irq_id);
+			pdata->te_irq_id = gpio_to_irq(gpio);
+			if(pdata->te_irq_id < 0) {
+		        dev_err(dev,"%s - Unable to request IRQ: %d\n", __func__, pdata->te_irq_id);
 		    }
 		    else{
-				pr_info("TE GPIO%d, IRQ id = %d\n", gpio, irq_id);
-
-				err = request_irq(irq_id, irq_TE_handler, IRQF_SHARED | IRQF_TRIGGER_RISING,
-			               "TE", pdata);
-				if (err < 0) {
-					dev_err(dev,"ERROR initializing TE signal irq\n");
-				}
-				else{
-					pdata->te_irq = true;
-				}
+				pr_info("TE GPIO%d, IRQ id = %d\n", gpio, pdata->te_irq_id);
+				pdata->te_irq_enabled = true;
 			}
 		}
 	}
@@ -1757,7 +1752,7 @@ int fbtft_probe_common(struct fbtft_display *display,
 	struct fb_info *info;
 	struct fbtft_par *par;
 	struct fbtft_platform_data *pdata;
-	int ret;
+	int ret, err;
 
 	if (sdev)
 		dev = &sdev->dev;
@@ -1855,11 +1850,21 @@ int fbtft_probe_common(struct fbtft_display *display,
 	if (ret < 0)
 		goto out_release;
 
+	/** Initialize TE interrupt */
+	if(par->pdata->te_irq_enabled){
+		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, IRQF_SHARED | IRQF_TRIGGER_RISING,
+	               "TE", par->pdata);
+		if (err < 0) {
+			dev_err(dev,"ERROR initializing TE signal irq\n");
+			par->pdata->te_irq_enabled = false;
+		}
+	}
+
 	if (par->spi_async_mode) {
 		/* Start constant Display update using spi async */
 		par->write_line_start = 0;
 		par->write_line_end = par->info->var.yres - 1;
-		if (par->pdata->te_irq)
+		if (par->pdata->te_irq_enabled)
 			par->ready_for_spi_async = true;
 		else
 			fbtft_start_new_screen_transfer_async(par);

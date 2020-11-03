@@ -154,7 +154,8 @@ struct fbtft_platform_data {
 	unsigned long rotate_soft;
 	bool bgr;
 	bool spi_async_mode;
-	bool te_irq;
+	bool te_irq_enabled;
+	int te_irq_id;
 	bool interlacing;
 	unsigned int fps;
 	int txbuflen;

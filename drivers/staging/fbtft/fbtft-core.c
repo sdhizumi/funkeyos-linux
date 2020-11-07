@@ -582,24 +582,27 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 
 		/* Copy buffer */
 
-		/* This should be handled using a double buffer (or
-		   triple depending on game fps vs screen fps) pointed
-		   by par->info->screen_buffer. The buffer pointed
-		   (the one being written) should change using the
-		   FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
-		   FB_FlipHWSurface). This is a dirty but very
-		   efficient alternative for now: we make a quick
-		   memcpy of the screen_buffer in another one. It goes
-		   so fast that the "applicative" tearing that could
-		   happen if this function were to launch in the
-		   middle of a user space SDL_BlitSurface(sw_surface,
-		   NULL, hw_surface, NULL) call is so unbelievably
-		   rare that completey unnoticeable and it takes up so
-		   little CPU that really, it's worth the compromise
-		   for now */
+		/* 
+		This should be handled using a double buffer (or
+		triple depending on game fps vs screen fps) pointed
+		by par->info->screen_buffer. The buffer pointed
+		(the one being written) should change using the
+		FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
+		FB_FlipHWSurface). This is a dirty but very
+		efficient alternative for now: we make a quick
+		memcpy of the screen_buffer in another one. It goes
+		so fast that the "applicative" tearing that could
+		happen if this function were to launch in the
+		middle of a user space SDL_BlitSurface(sw_surface,
+		NULL, hw_surface, NULL) call is rare enough not to 
+		be noticed much and it takes up so little CPU that 
+		really, it's worth the compromise for now 
+		*/
+		//printk("m\n");
 		memcpy(par->vmem_post_process + par->write_line_start * par->info->fix.line_length,
 			par->info->screen_buffer + par->write_line_start * par->info->fix.line_length,
 			(par->write_line_end-par->write_line_start + 1) * par->info->fix.line_length);
+		//printk("n\n");
 
 		/* Notifications */
 		if (par->notification[0]) {
@@ -634,7 +637,7 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 	unsigned long index;
 	unsigned int y_low = 0, y_high = 0;
 	int count = 0;
-
+	
 	//#define FPS_DEBUG
 	#if 0
 		long fps;
@@ -1336,7 +1339,7 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 		 fb_info->fix.id, fb_info->var.xres, fb_info->var.yres,
 		 fb_info->fix.smem_len >> 10, text1,
 		 HZ / fb_info->fbdefio->delay, text2,
-		 par->spi_async_mode ? "SPI mode asynchrone, " : "",
+		 par->spi_async_mode ? "SPI mode async, " : "",
 		 par->interlacing ? "Interlaced" : "");
 
 #ifdef CONFIG_FB_BACKLIGHT
@@ -1864,10 +1867,12 @@ int fbtft_probe_common(struct fbtft_display *display,
 		/* Start constant Display update using spi async */
 		par->write_line_start = 0;
 		par->write_line_end = par->info->var.yres - 1;
-		if (par->pdata->te_irq_enabled)
+		if (par->pdata->te_irq_enabled){
 			par->ready_for_spi_async = true;
-		else
+		}
+		else{
 			fbtft_start_new_screen_transfer_async(par);
+		}
 	}
 	return 0;
 

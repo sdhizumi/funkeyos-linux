@@ -3,6 +3,7 @@
 #include <linux/errno.h>
 #include <linux/gpio.h>
 #include <linux/spi/spi.h>
+#include <linux/spinlock.h>
 #include "fbtft.h"
 
 /* Ugly static declarations for now */
@@ -31,10 +32,15 @@ int fbtft_write_spi_async(struct fbtft_par *par, void *buf, size_t len, void (* 
 		return -1;
 	}
 
+	/** Critical section, to reset and set spi msg struct */
+	spin_lock(&par->dirty_lock);
+
 	spi_message_init(m);
 	m->complete = cb;
 	m->context = par;
 	spi_message_add_tail(t, m);
+	
+	spin_unlock(&par->dirty_lock);
 
 	return spi_async(par->spi, m);
 #endif

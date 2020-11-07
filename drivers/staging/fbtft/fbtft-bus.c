@@ -143,7 +143,12 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 
 		if (par->nb_fps_values == 200) {
 			fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
-				 "Display update: fps=%ld\n", par->avg_fps / par->nb_fps_values);
+				 "Display update%s: fps=%ld\n", 
+				 par->pdata->te_irq_enabled?" (TE)":"",
+				 par->avg_fps / par->nb_fps_values);
+			printk("Display update%s: fps=%ld\n", 
+				 par->pdata->te_irq_enabled?" (TE)":"",
+				 par->avg_fps / par->nb_fps_values);
 			par->avg_fps = 0;
 			par->nb_fps_values = 0;
 		}
@@ -151,7 +156,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 
 #endif //FPS_DEBUG
 
-	/* Post process screen for doufle buf cpy, notifs, rotation soft... */
+	/* Post process screen for doufle buf copy, notifs, rotation soft... */
 	fbtft_post_process_screen(par);
 
 	/* new line to write */
@@ -256,17 +261,17 @@ static void spi_complete_cmd_init_data_write(void *arg)
 
 int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par)
 {
-	static u8 init_data_cmd_buf = MIPI_DCS_WRITE_MEMORY_START;
+	static const u8 init_data_cmd_buf = MIPI_DCS_WRITE_MEMORY_START;
 	int ret = 0;
 
 	// printk("%s\n", __func__);
 
-	/* Resetting to 0 for incoming cmd init data write */
+	/* Resetting to 0 for incoming cmd: "init data write" */
 	if (gpio_is_valid(par->gpio.dc))
 		gpio_set_value(par->gpio.dc, 0);
 
 	/* Start sending cmd init data */
-	ret = par->fbtftops.write_async(par, &init_data_cmd_buf, 1,
+	ret = par->fbtftops.write_async(par, (u8 *) &init_data_cmd_buf, 1,
 					spi_complete_cmd_init_data_write);
 	if (ret < 0)
 		dev_err(par->info->device, "write() failed and returned %d\n", ret);
@@ -351,7 +356,8 @@ int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t l
 		startbyte_size = 1;
 	}
 
-	while (remain) {
+	/* No while here, must be one shot */
+	//while (remain) {
 		to_copy = min(tx_array_size, remain);
 		dev_dbg(par->info->device, "    to_copy=%zu, remain=%zu\n",
 						to_copy, remain - to_copy);
@@ -360,12 +366,12 @@ int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t l
 			txbuf16[i] = cpu_to_be16(vmem16[i]);
 
 		vmem16 = vmem16 + to_copy;
-		ret = par->fbtftops.write_async(par, par->txbuf.buf,
+		ret = par->fbtftops.write_async(par, (u8 *) par->txbuf.buf,
 						startbyte_size + to_copy * 2, spi_complete_data_write);
 		if (ret < 0)
 			return ret;
 		remain -= to_copy;
-	}
+	//}
 
 	return ret;
 }

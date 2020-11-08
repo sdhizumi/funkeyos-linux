@@ -578,6 +578,15 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 		screen_post_process = true;
 	}
 
+	/* Get last memory buffer not written */
+	if(par->nb_backbuffers_full > 0){
+		par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
+		par->nb_backbuffers_full--;
+	}
+	else{
+		par->vmem_ptr = par->info->screen_buffer;
+		par->nb_backbuffers_full = 0; // Avoid overflows, should not happen anyway
+	}
 	//par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
 	//par->vmem_ptr = par->info->screen_buffer;
 
@@ -645,7 +654,8 @@ void fbtft_flip_backbuffer(struct fbtft_par *par)
 		par->vmem_size);
 	par->vmem_prev_buf_idx = par->vmem_cur_buf_idx;
 	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
-	par->nb_backbuffers_full++;
+	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS)
+		par->nb_backbuffers_full++;
 	//spin_unlock(&par->dirty_lock);
 }
 
@@ -1709,18 +1719,15 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	if(!pdata->par->ready_for_spi_async)
 		return IRQ_HANDLED;
 
+	/* This should be enabled otherwise there will be some 
+	soft tearing if the userspace flip speed is lower than 
+	TE's IRQ speed. Why? because if we don't wxit now, we'll 
+	display the frambeffer instead of the saved backed buffers*/
 #if 0
-	if (pdata->par->nb_backbuffers_full <= 0)
+	if (pdata->par->nb_backbuffers_full <= 0){
+		pdata->par->nb_backbuffers_full = 0;
 		return IRQ_HANDLED;
-	/*static int prev_must_render = 0;
-	if (prev_must_render == pdata->par->nb_backbuffers_full);
-		return IRQ_HANDLED;*/
-
-	pdata->par->nb_backbuffers_full--;
-	if(pdata->par->nb_backbuffers_full > 1024){
-		pdata->par->nb_backbuffers_full=1;
 	}
-	prev_must_render = pdata->par->nb_backbuffers_full;
 #endif
 
 	fbtft_start_new_screen_transfer_async(pdata->par);

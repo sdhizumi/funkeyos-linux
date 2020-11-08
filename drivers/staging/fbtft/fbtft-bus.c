@@ -124,7 +124,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	lock = true;
 
 	/* Debug fps */
-#define FPS_DEBUG
+//#define FPS_DEBUG
 #ifdef FPS_DEBUG
 	long fps;
 	ktime_t ts_now = ktime_get();
@@ -155,17 +155,6 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	}
 
 #endif //FPS_DEBUG
-
-	/* Get last memory buffer not written */
-	if(par->nb_backbuffers_full > 0){
-		par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
-		par->nb_backbuffers_full--;
-		par->nb_backbuffers_full = !!par->nb_backbuffers_full; //back to 1 or 0 to avoid overflows
-	}
-	else{
-		par->nb_backbuffers_full = 0; // Avoid overflows, should not happen
-		par->vmem_ptr = par->info->screen_buffer;
-	}
 
 	/* Post process screen for doufle buf copy, notifs, rotation soft... */
 	fbtft_post_process_screen(par);

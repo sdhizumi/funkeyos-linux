@@ -230,7 +230,7 @@ struct fbtft_par {
 	u8 vmem_prev_buf_idx;
 	u8 vmem_cur_buf_idx;
 	int vmem_size;
-	int must_render;
+	int nb_backbuffers_full;
 	u8 startbyte;
 	struct fbtft_ops fbtftops;
 	spinlock_t dirty_lock;

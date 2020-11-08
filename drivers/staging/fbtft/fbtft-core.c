@@ -578,13 +578,6 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 		screen_post_process = true;
 	}
 
-	/* Get last memory buffer not written */
-	if(par->must_render){
-		par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
-	}
-	else{
-		par->vmem_ptr = par->info->screen_buffer;
-	}
 	//par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
 	//par->vmem_ptr = par->info->screen_buffer;
 
@@ -652,7 +645,7 @@ void fbtft_flip_backbuffer(struct fbtft_par *par)
 		par->vmem_size);
 	par->vmem_prev_buf_idx = par->vmem_cur_buf_idx;
 	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
-	par->must_render++;
+	par->nb_backbuffers_full++;
 	//spin_unlock(&par->dirty_lock);
 }
 
@@ -1224,7 +1217,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	par->vmem_prev_buf_idx = 0;
 	par->vmem_cur_buf_idx = 0;
 	par->vmem_ptr = par->info->screen_buffer + (par->vmem_cur_buf_idx*par->vmem_size);
-	par->must_render = 0;
+	par->nb_backbuffers_full = 0;
 	par->pdata = pdata;
 	pdata->par = par;
 	par->debug = display->debug;
@@ -1717,17 +1710,17 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 		return IRQ_HANDLED;
 
 #if 0
-	if (pdata->par->must_render <= 0)
+	if (pdata->par->nb_backbuffers_full <= 0)
 		return IRQ_HANDLED;
 	/*static int prev_must_render = 0;
-	if (prev_must_render == pdata->par->must_render);
+	if (prev_must_render == pdata->par->nb_backbuffers_full);
 		return IRQ_HANDLED;*/
 
-	pdata->par->must_render--;
-	if(pdata->par->must_render > 1024){
-		pdata->par->must_render=1;
+	pdata->par->nb_backbuffers_full--;
+	if(pdata->par->nb_backbuffers_full > 1024){
+		pdata->par->nb_backbuffers_full=1;
 	}
-	prev_must_render = pdata->par->must_render;
+	prev_must_render = pdata->par->nb_backbuffers_full;
 #endif
 
 	fbtft_start_new_screen_transfer_async(pdata->par);

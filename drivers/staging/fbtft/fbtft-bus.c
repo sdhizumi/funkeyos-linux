@@ -146,15 +146,26 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 				 "Display update%s: fps=%ld\n", 
 				 par->pdata->te_irq_enabled?" (TE)":"",
 				 par->avg_fps / par->nb_fps_values);
-			printk("Display update%s: fps=%ld, par->must_render=%d\n", 
+			printk("Display update%s: fps=%ld, par->nb_backbuffers_full=%d\n", 
 				 par->pdata->te_irq_enabled?" (TE)":"",
-				 par->avg_fps / par->nb_fps_values, par->must_render);
+				 par->avg_fps / par->nb_fps_values, par->nb_backbuffers_full);
 			par->avg_fps = 0;
 			par->nb_fps_values = 0;
 		}
 	}
 
 #endif //FPS_DEBUG
+
+	/* Get last memory buffer not written */
+	if(par->nb_backbuffers_full > 0){
+		par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
+		par->nb_backbuffers_full--;
+		par->nb_backbuffers_full = !!par->nb_backbuffers_full; //back to 1 or 0 to avoid overflows
+	}
+	else{
+		par->nb_backbuffers_full = 0; // Avoid overflows, should not happen
+		par->vmem_ptr = par->info->screen_buffer;
+	}
 
 	/* Post process screen for doufle buf copy, notifs, rotation soft... */
 	fbtft_post_process_screen(par);

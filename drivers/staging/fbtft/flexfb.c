@@ -22,7 +22,7 @@
 #include <linux/spi/spi.h>
 #include <linux/delay.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME	    "flexfb"
 

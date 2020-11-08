@@ -19,7 +19,7 @@
 #include <linux/delay.h>
 
 #include <linux/gpio.h>
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME "fb_ra8875"
 

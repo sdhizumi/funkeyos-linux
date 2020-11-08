@@ -21,7 +21,7 @@
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define MAX_GPIOS 32
 

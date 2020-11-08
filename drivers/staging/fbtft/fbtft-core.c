@@ -43,7 +43,7 @@
 #include <linux/rmap.h>
 #include <linux/pagemap.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 #include "fb_text.h"
 #include "internal.h"
 

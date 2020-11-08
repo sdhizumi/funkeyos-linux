@@ -21,7 +21,7 @@
 #include <linux/init.h>
 #include <linux/gpio.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME		"fb_ssd1289"
 #define WIDTH		240

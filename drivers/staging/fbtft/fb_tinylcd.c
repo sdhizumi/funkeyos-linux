@@ -20,7 +20,7 @@
 #include <linux/delay.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME		"fb_tinylcd"
 #define WIDTH		320

@@ -15,7 +15,7 @@
 #ifndef __LINUX_FBTFT_TEXT_H
 #define __LINUX_FBTFT_TEXT_H
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define MONACO_WIDTH 5
 #define MONACO_HEIGHT 8

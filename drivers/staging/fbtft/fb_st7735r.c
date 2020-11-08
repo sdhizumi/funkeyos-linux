@@ -19,7 +19,7 @@
 #include <linux/init.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME "fb_st7735r"
 #define DEFAULT_GAMMA   "0F 1A 0F 18 2F 28 20 22 1F 1B 23 37 00 07 02 10\n" \

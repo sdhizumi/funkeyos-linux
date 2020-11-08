@@ -21,7 +21,7 @@
 #include <linux/delay.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME "fb_hx8353d"
 #define DEFAULT_GAMMA "50 77 40 08 BF 00 03 0F 00 01 73 00 72 03 B0 0F 08 00 0F"

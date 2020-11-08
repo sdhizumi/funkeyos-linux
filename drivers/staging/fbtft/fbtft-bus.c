@@ -5,7 +5,7 @@
 #include <linux/spi/spi.h>
 #include <linux/delay.h> /* usleep_range */
 #include <video/mipi_display.h>
-#include "fbtft.h"
+#include <linux/fbtft.h>
 #include "fb_text.h"
 
 /*****************************************************************************

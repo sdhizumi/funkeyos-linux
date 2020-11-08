@@ -24,7 +24,7 @@
 #include <linux/delay.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 #include "fb_hx8357d.h"
 
 #define DRVNAME		"fb_hx8357d"

@@ -22,7 +22,7 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME		"fb_ili9325"
 #define WIDTH		240

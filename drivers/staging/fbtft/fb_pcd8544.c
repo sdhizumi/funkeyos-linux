@@ -24,7 +24,7 @@
 #include <linux/spi/spi.h>
 #include <linux/delay.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME	       "fb_pcd8544"
 #define WIDTH          84

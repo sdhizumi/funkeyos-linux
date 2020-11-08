@@ -24,7 +24,7 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME		"fb_upd161704"
 #define WIDTH		240

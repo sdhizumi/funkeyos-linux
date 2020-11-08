@@ -21,7 +21,7 @@
 #include <linux/module.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME "fb_st7789v"
 //#define SAEF_SETTINGS

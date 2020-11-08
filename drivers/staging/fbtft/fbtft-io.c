@@ -4,7 +4,7 @@
 #include <linux/gpio.h>
 #include <linux/spi/spi.h>
 #include <linux/spinlock.h>
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 /* Ugly static declarations for now */
 #define NB_STORED_SPI_MSG	1

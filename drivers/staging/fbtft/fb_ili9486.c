@@ -19,7 +19,7 @@
 #include <linux/init.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME		"fb_ili9486"
 #define WIDTH		320

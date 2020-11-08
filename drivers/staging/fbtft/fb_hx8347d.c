@@ -21,7 +21,7 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME		"fb_hx8347d"
 #define WIDTH		320

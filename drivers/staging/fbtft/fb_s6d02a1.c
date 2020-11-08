@@ -20,7 +20,7 @@
 #include <linux/init.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME "fb_s6d02a1"
 

@@ -21,7 +21,7 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME		"fb_sh1106"
 #define WIDTH		128

@@ -21,7 +21,7 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 /* Uncomment text line to use negative image on display */
 /*#define NEGATIVE*/

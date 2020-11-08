@@ -20,7 +20,7 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME			"fb_watterott"
 #define WIDTH			320

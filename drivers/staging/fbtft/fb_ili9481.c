@@ -21,7 +21,7 @@
 #include <linux/delay.h>
 #include <video/mipi_display.h>
 
-#include "fbtft.h"
+#include <linux/fbtft.h>
 
 #define DRVNAME	"fb_ili9481"
 #define WIDTH		320

@@ -61,6 +61,7 @@
 enum st7789v_command {
 	TEOFF = 0x34,
 	TEON = 0x35,
+	STE = 0x44,
 	PORCTRL = 0xB2,
 	GCTRL = 0xB7,
 	VCOMS = 0xBB,
@@ -95,6 +96,10 @@ enum st7789v_command {
 static int init_display(struct fbtft_par *par)
 {
 #ifndef SAEF_SETTINGS
+	/* Software reset */
+	write_reg(par, 0x01);
+	mdelay(5);
+
 	/* turn off sleep mode */
 	write_reg(par, 0x11);
 	mdelay(120);
@@ -167,6 +172,10 @@ static int init_display(struct fbtft_par *par)
 
 	/* Activate TE signal for Vsync only */
 	write_reg(par, TEON, 0x00);
+
+	/* Set TE tearline */
+	/*uint16_t tearline=10;
+	write_reg(par, STE, (tearline>>8), (tearline&0xff) );*/
 
 	/* refresh rate */
 	//write_reg(par, 0xC6,0x1F); //39Hz

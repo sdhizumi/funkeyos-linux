@@ -20,18 +20,20 @@
 #include <linux/spi/spi.h>
 #include <linux/platform_device.h>
 
-#define FBTFT_ONBOARD_BACKLIGHT 	2
 
-#define FBTFT_GPIO_NO_MATCH		0xFFFF
-#define FBTFT_GPIO_NAME_SIZE		32
+#define FBTFT_VMEM_BUFS					3
+
+#define FBTFT_ONBOARD_BACKLIGHT 		2
+#define FBTFT_GPIO_NO_MATCH				0xFFFF
+#define FBTFT_GPIO_NAME_SIZE			32
 #define FBTFT_MAX_INIT_SEQUENCE      	512
 #define FBTFT_GAMMA_MAX_VALUES_TOTAL 	128
-#define FBTFT_OVERLAY_NB_VALUES		4
+#define FBTFT_OVERLAY_NB_VALUES			4
 
-#define FBTFT_NOTIF_MAX_SIZE		400
+#define FBTFT_NOTIF_MAX_SIZE			400
 
-#define FBTFT_OF_INIT_CMD		BIT(24)
-#define FBTFT_OF_INIT_DELAY		BIT(25)
+#define FBTFT_OF_INIT_CMD				BIT(24)
+#define FBTFT_OF_INIT_DELAY				BIT(25)
 
 /**
  * struct fbtft_gpio - Structure that holds one pinname to gpio mapping
@@ -224,6 +226,11 @@ struct fbtft_par {
 	u8 *buf;
 	u8 *vmem_ptr;
 	u8 *vmem_post_process;
+	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS];
+	u8 vmem_prev_buf_idx;
+	u8 vmem_cur_buf_idx;
+	int vmem_size;
+	int must_render;
 	u8 startbyte;
 	struct fbtft_ops fbtftops;
 	spinlock_t dirty_lock;
@@ -298,6 +305,7 @@ int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
 void fbtft_rotate_soft(u16 *mat, int size, int rotation);
 void fbtft_post_process_screen(struct fbtft_par *par);
+void fbtft_flip_backbuffer(struct fbtft_par *par);
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);

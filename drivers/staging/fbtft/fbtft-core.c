@@ -429,6 +429,9 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 		if (par->pdata->rotate == 90)
 			par->fbtftops.set_addr_win(par, 80, start_line,
 				320 - 1, end_line);
+		else if (par->pdata->rotate == 180)
+			par->fbtftops.set_addr_win(par, 0, 80,
+				par->info->var.xres - 1, 320 - 1);
 		else
 			par->fbtftops.set_addr_win(par, 0, start_line,
 				par->info->var.xres - 1, end_line);
@@ -575,13 +578,19 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 		screen_post_process = true;
 	}
 
+	/* Get last memory buffer not written */
+	if(par->must_render){
+		par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
+	}
+	else{
+		par->vmem_ptr = par->info->screen_buffer;
+	}
+	//par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
+	//par->vmem_ptr = par->info->screen_buffer;
+
 	/* Post process */
 	if (screen_post_process) {
-		/* Change vmem ptr to send by SPI */
-		par->vmem_ptr = par->vmem_post_process;
-
 		/* Copy buffer */
-
 		/* 
 		This should be handled using a double buffer (or
 		triple depending on game fps vs screen fps) pointed
@@ -598,17 +607,22 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 		be noticed much and it takes up so little CPU that 
 		really, it's worth the compromise for now 
 		*/
+		#if 1
 		//printk("m\n");
 		memcpy(par->vmem_post_process + par->write_line_start * par->info->fix.line_length,
-			par->info->screen_buffer + par->write_line_start * par->info->fix.line_length,
+			par->vmem_ptr + par->write_line_start * par->info->fix.line_length,
 			(par->write_line_end-par->write_line_start + 1) * par->info->fix.line_length);
 		//printk("n\n");
+
+		/* Change vmem ptr to send by SPI */
+		par->vmem_ptr = par->vmem_post_process;
+		#endif
 
 		/* Notifications */
 		if (par->notification[0]) {
 			x_notif = 0;
 			y_notif = 0;
-			basic_text_out16_bg((u16 *)par->vmem_post_process, par->info->var.xres, par->info->var.yres,
+			basic_text_out16_bg((u16 *)par->vmem_ptr, par->info->var.xres, par->info->var.yres,
 				x_notif, y_notif, RGB565(255, 255, 255), RGB565(0, 0, 0), par->notification);
 
 			if (y_notif < par->write_line_start)
@@ -619,19 +633,44 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 
 		/* Low battery icon */
 		if (par->low_battery) {
-			draw_low_battery((u16 *)par->vmem_post_process, par->info->var.xres, par->info->var.yres);
+			draw_low_battery((u16 *)par->vmem_ptr, par->info->var.xres, par->info->var.yres);
 		}
 
 		/* Soft rotation */
 		if (par->pdata->rotate_soft)
-			fbtft_rotate_soft((u16*)par->vmem_post_process, par->info->var.yres, par->pdata->rotate_soft);
-	} else
-		par->vmem_ptr = par->info->screen_buffer;
+			fbtft_rotate_soft((u16*)par->vmem_ptr, par->info->var.yres, par->pdata->rotate_soft);
+	} 
+}
+
+/* Copy framebuffer memory in current back buffer, then
+change current back buffer */
+void fbtft_flip_backbuffer(struct fbtft_par *par)
+{
+	//spin_lock(&par->dirty_lock);
+	memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], 
+		par->info->screen_buffer, 
+		par->vmem_size);
+	par->vmem_prev_buf_idx = par->vmem_cur_buf_idx;
+	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
+	par->must_render++;
+	//spin_unlock(&par->dirty_lock);
+}
+
+static void fbtft_first_io(struct fb_info *info){
+	/*struct fbtft_par *par = info->par;
+	printk("f\n");*/
 }
 
 static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 {
+
 	struct fbtft_par *par = info->par;
+
+	/* This disables fbtft's defered io, useful in spi_async mode or
+	if any other driver handles screens updates instead of fbtft */
+	if (par->spi_async_mode)
+		return VM_FAULT_LOCKED;
+
 	unsigned int dirty_lines_start, dirty_lines_end;
 	struct page *page;
 	unsigned long index;
@@ -772,7 +811,7 @@ static struct page *fb_deferred_io_page(struct fb_info *info, unsigned long offs
 	return page;
 }
 
-/* this is to find and return the vmalloc-ed fb pages */
+/* This is to find and return the vmalloc-ed fb pages */
 static int fb_deferred_io_fault(struct vm_fault *vmf)
 {
 	unsigned long offset;
@@ -780,12 +819,16 @@ static int fb_deferred_io_fault(struct vm_fault *vmf)
 	struct fb_info *info = vmf->vma->vm_private_data;
 
 	offset = vmf->pgoff << PAGE_SHIFT;
-	if (offset >= info->fix.smem_len)
+	if (offset >= info->fix.smem_len){
+		printk("fault\n");
 		return VM_FAULT_SIGBUS;
+	}
 
 	page = fb_deferred_io_page(info, offset);
-	if (!page)
+	if (!page){
+		printk("no page\n");
 		return VM_FAULT_SIGBUS;
+	}
 
 	get_page(page);
 
@@ -827,8 +870,9 @@ static int fb_deferred_io_mkwrite(struct vm_fault *vmf)
 	mutex_lock(&fbdefio->lock);
 
 	/* first write in this cycle, notify the driver */
-	if (fbdefio->first_io && list_empty(&fbdefio->pagelist))
+	if (fbdefio->first_io && list_empty(&fbdefio->pagelist)){
 		fbdefio->first_io(info);
+	}
 
 	/*
 	 * We want the page to remain locked from ->page_mkwrite until
@@ -1008,6 +1052,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	struct fb_ops *fbops = NULL;
 	struct fb_deferred_io *fbdefio = NULL;
 	u8 *vmem = NULL;
+	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS] = {NULL};
 	u8 *vmem_post_process = NULL;
 	void *txbuf = NULL;
 	void *buf = NULL;
@@ -1078,10 +1123,16 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 
 	vmem_size = display->width * display->height * bpp / 8;
 	vmem = vzalloc(vmem_size);
-	if (!vmem)
-		goto alloc_fail;
+	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
+	{
+		vmem_back_buffers[i] = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
+		if (!vmem_back_buffers[i])
+			goto alloc_fail;
+	}
 
-	vmem_post_process = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
+	vmem_post_process = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
+	//vmem_post_process = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
+	//vmem_post_process = vzalloc(vmem_size);
 	if (!vmem_post_process)
 		goto alloc_fail;
 
@@ -1126,10 +1177,11 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 
 	fbdefio->delay =           HZ/fps;
 	fbdefio->deferred_io =     fbtft_deferred_io;
+	fbdefio->first_io =		   fbtft_first_io;
 	fb_deferred_io_init(info);
 
-	// Overload
-	info->fbops->fb_mmap = fbtft_fb_deferred_io_mmap;
+	// Surcharge fb_mmap (after fb_deferred_io_init)
+	fbops->fb_mmap = fbtft_fb_deferred_io_mmap;
 
 	strncpy(info->fix.id, dev->driver->name, 16);
 	info->fix.type =           FB_TYPE_PACKED_PIXELS;
@@ -1139,13 +1191,13 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	info->fix.ywrapstep =	   0;
 	info->fix.line_length =    width * bpp / 8;
 	info->fix.accel =          FB_ACCEL_NONE;
-	info->fix.smem_len =       vmem_size;
+	info->fix.smem_len =       vmem_size*FBTFT_VMEM_BUFS;
 
 	info->var.rotate =         pdata->rotate;
 	info->var.xres =           width;
 	info->var.yres =           height;
 	info->var.xres_virtual =   info->var.xres;
-	info->var.yres_virtual =   info->var.yres;
+	info->var.yres_virtual =   info->var.yres*2; // So that SDL allows SDL_DOUBLEBUF
 	info->var.bits_per_pixel = bpp;
 	info->var.nonstd =         1;
 
@@ -1163,8 +1215,16 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 
 	par = info->par;
 	par->info = info;
+	par->vmem_size = vmem_size;
+	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
+	{
+		par->vmem_back_buffers[i] = vmem_back_buffers[i];
+	}
 	par->vmem_post_process = vmem_post_process;
-	par->vmem_ptr = par->info->screen_buffer;
+	par->vmem_prev_buf_idx = 0;
+	par->vmem_cur_buf_idx = 0;
+	par->vmem_ptr = par->info->screen_buffer + (par->vmem_cur_buf_idx*par->vmem_size);
+	par->must_render = 0;
 	par->pdata = pdata;
 	pdata->par = par;
 	par->debug = display->debug;
@@ -1653,9 +1713,24 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	}
 #endif //DEBUG_TE_IRQ_COUNT
 
-	if(pdata->par->ready_for_spi_async){
-		fbtft_start_new_screen_transfer_async(pdata->par);
+	if(!pdata->par->ready_for_spi_async)
+		return IRQ_HANDLED;
+
+#if 0
+	if (pdata->par->must_render <= 0)
+		return IRQ_HANDLED;
+	/*static int prev_must_render = 0;
+	if (prev_must_render == pdata->par->must_render);
+		return IRQ_HANDLED;*/
+
+	pdata->par->must_render--;
+	if(pdata->par->must_render > 1024){
+		pdata->par->must_render=1;
 	}
+	prev_must_render = pdata->par->must_render;
+#endif
+
+	fbtft_start_new_screen_transfer_async(pdata->par);
 
     return IRQ_HANDLED;
 }

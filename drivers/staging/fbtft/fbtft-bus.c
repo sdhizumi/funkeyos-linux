@@ -124,7 +124,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	lock = true;
 
 	/* Debug fps */
-//#define FPS_DEBUG
+#define FPS_DEBUG
 #ifdef FPS_DEBUG
 	long fps;
 	ktime_t ts_now = ktime_get();
@@ -146,9 +146,9 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 				 "Display update%s: fps=%ld\n", 
 				 par->pdata->te_irq_enabled?" (TE)":"",
 				 par->avg_fps / par->nb_fps_values);
-			printk("Display update%s: fps=%ld\n", 
+			printk("Display update%s: fps=%ld, par->must_render=%d\n", 
 				 par->pdata->te_irq_enabled?" (TE)":"",
-				 par->avg_fps / par->nb_fps_values);
+				 par->avg_fps / par->nb_fps_values, par->must_render);
 			par->avg_fps = 0;
 			par->nb_fps_values = 0;
 		}

@@ -581,7 +581,8 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 	/* Get last memory buffer not written */
 	/* >1 and not >0 because we want to make sure */
 	/* application writes faster than it's read here */
-	if(par->nb_backbuffers_full > 1){
+	//if(par->nb_backbuffers_full > 1){
+	if(par->nb_backbuffers_full > 0){
 		par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
 		par->nb_backbuffers_full--;
 	}

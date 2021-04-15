@@ -113,33 +113,40 @@ static void async_run_entry_fn(struct work_struct *work)
 	unsigned long flags;
 	ktime_t uninitialized_var(calltime), delta, rettime;
 
-	/* 1) run (and print duration) */
-	if (initcall_debug && system_state < SYSTEM_RUNNING) {
-		pr_debug("calling  %lli_%pF @ %i\n",
-			(long long)entry->cookie,
-			entry->func, task_pid_nr(current));
-		calltime = ktime_get();
+	// Ugly (but working) Hack to avoid ALSA traps on FunKey S
+	if(entry > 0xc0004000){
+
+		/* 1) run (and print duration) */
+		if (initcall_debug && system_state < SYSTEM_RUNNING) {
+			pr_debug("calling  %lli_%pF @ %i\n",
+				(long long)entry->cookie,
+				entry->func, task_pid_nr(current));
+			calltime = ktime_get();
+		}
+		entry->func(entry->data, entry->cookie);
+		if (initcall_debug && system_state < SYSTEM_RUNNING) {
+			rettime = ktime_get();
+			delta = ktime_sub(rettime, calltime);
+			pr_debug("initcall %lli_%pF returned 0 after %lld usecs\n",
+				(long long)entry->cookie,
+				entry->func,
+				(long long)ktime_to_ns(delta) >> 10);
+		}
+
+		/* 2) remove self from the pending queues */
+		spin_lock_irqsave(&async_lock, flags);
+		list_del_init(&entry->domain_list);
+		list_del_init(&entry->global_list);
+
+		/* 3) free the entry */
+		kfree(entry);
+		atomic_dec(&entry_count);
+
+		spin_unlock_irqrestore(&async_lock, flags);
 	}
-	entry->func(entry->data, entry->cookie);
-	if (initcall_debug && system_state < SYSTEM_RUNNING) {
-		rettime = ktime_get();
-		delta = ktime_sub(rettime, calltime);
-		pr_debug("initcall %lli_%pF returned 0 after %lld usecs\n",
-			(long long)entry->cookie,
-			entry->func,
-			(long long)ktime_to_ns(delta) >> 10);
-	}
-
-	/* 2) remove self from the pending queues */
-	spin_lock_irqsave(&async_lock, flags);
-	list_del_init(&entry->domain_list);
-	list_del_init(&entry->global_list);
-
-	/* 3) free the entry */
-	kfree(entry);
-	atomic_dec(&entry_count);
-
-	spin_unlock_irqrestore(&async_lock, flags);
+	/*else{
+		printk(KERN_ERR "Entry NULL\n");
+	}*/
 
 	/* 4) wake up any waiters */
 	wake_up(&async_done);

@@ -182,8 +182,8 @@
                compatible = "sitronix,st7789v";
                reg = <0>;
                spi-max-frequency = <50000000>;
-               txbuflen = <115202>;
                spi_async_mode = "true";
+               txbuflen = <115202>; // Not needed in async mode
                rotate = <0>;               
                rotate_soft = <270>;
                fps = <100>;

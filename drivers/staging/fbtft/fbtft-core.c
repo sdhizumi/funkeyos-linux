@@ -1259,6 +1259,8 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		txbuflen = vmem_size + 2; /* add in case startbyte is used */
 	if (txbuflen > vmem_size + 2)
 		txbuflen = 0;
+	if(par->spi_async_mode)
+		txbuflen = 0;	/* Send whole buffer from video memory in async mode */
 
 #ifdef __LITTLE_ENDIAN
 	if ((!txbuflen) && (bpp > 8))
@@ -1941,8 +1943,8 @@ int fbtft_probe_common(struct fbtft_display *display,
 		}
 	}
 
+	/* Start constant Display update using spi async */
 	if (par->spi_async_mode) {
-		/* Start constant Display update using spi async */
 		par->write_line_start = 0;
 		par->write_line_end = par->info->var.yres - 1;
 		if (par->pdata->te_irq_enabled){

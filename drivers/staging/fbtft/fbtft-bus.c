@@ -153,13 +153,12 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 			par->nb_fps_values = 0;
 		}
 	}
-
 #endif //FPS_DEBUG
 
-	/* Post process screen for doufle buf copy, notifs, rotation soft... */
+	/* Post process screen for double buf copy, notifs, rotation soft... */
 	fbtft_post_process_screen(par);
 
-	/* new line to write */
+	/* New line to write */
 	write_line_start = par->write_line_start;
 	write_line_end = par->write_line_end;
 	par->write_line_start = -1;
@@ -172,8 +171,9 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 		write_line_end = write_line_start;
 		fbtft_write_cmd_window_line(par);
 
-	} else {
-		/* Start sending full screen */
+	} 
+	/* Start sending full screen */
+	else { 
 		par->length_data_transfer = par->info->var.yres * par->info->fix.line_length;
 		write_line_start = 0;
 		write_line_end = par->info->var.yres - 1;
@@ -323,57 +323,19 @@ static void spi_complete_data_write(void *arg)
 int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t len)
 {
 	u16 *vmem16;
-	__be16 *txbuf16 = par->txbuf.buf;
-	size_t remain;
-	size_t to_copy;
-	size_t tx_array_size;
-	int i;
-	int ret = 0;
-	size_t startbyte_size = 0;
 
 	fbtft_par_dbg(DEBUG_WRITE_VMEM, par, "%s(offset=%zu, len=%zu)\n",
 		__func__, offset, len);
 
-	remain = len / 2;
-	vmem16 = (u16 *)(par->vmem_ptr + offset);
-
+	/* DC pin = 1  for data transfers */
 	if (par->gpio.dc != -1)
 		gpio_set_value(par->gpio.dc, 1);
 
-	/* non buffered write */
-	if (!par->txbuf.buf){
-		//return par->fbtftops.write(par, vmem16, len);
-		return par->fbtftops.write_async(par, vmem16, len, spi_complete_data_write);
-	}
-
-	/* buffered write */
-	tx_array_size = par->txbuf.len / 2;
-
-	if (par->startbyte) {
-		txbuf16 = par->txbuf.buf + 1;
-		tx_array_size -= 2;
-		*(u8 *)(par->txbuf.buf) = par->startbyte | 0x2;
-		startbyte_size = 1;
-	}
-
-	/* No while here, must be one shot */
-	//while (remain) {
-		to_copy = min(tx_array_size, remain);
-		dev_dbg(par->info->device, "    to_copy=%zu, remain=%zu\n",
-						to_copy, remain - to_copy);
-
-		for (i = 0; i < to_copy; i++)
-			txbuf16[i] = cpu_to_be16(vmem16[i]);
-
-		vmem16 = vmem16 + to_copy;
-		ret = par->fbtftops.write_async(par, (u8 *) par->txbuf.buf,
-						startbyte_size + to_copy * 2, spi_complete_data_write);
-		if (ret < 0)
-			return ret;
-		remain -= to_copy;
-	//}
-
-	return ret;
+	/* FORCED non buffered write here */
+	/* since there is only one SPI */
+	/* message cached in async mode */
+	vmem16 = (u16 *)(par->vmem_ptr + offset);
+	return par->fbtftops.write_async(par, (u8 *) vmem16, len, spi_complete_data_write);
 }
 EXPORT_SYMBOL(fbtft_write_vmem16_bus8_async);
 

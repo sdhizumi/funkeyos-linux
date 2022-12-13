@@ -120,6 +120,9 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	if (par->pdata->te_irq_enabled && !par->ready_for_spi_async)
 		return -1;
 	if (lock){
+/* Debug TE overflows */
+//#define TE_OVERFLOW_DEBUG
+#ifdef TE_OVERFLOW_DEBUG
 		static ktime_t ts_lock_disp_last_time;
 		static int lock_cnt = 0;
 		
@@ -128,7 +131,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 		if (!ktime_to_ns(ts_lock_disp_last_time))
 			ts_lock_disp_last_time = ts_now_lock;
 
-#define SECS_MAX_PRINT_TE_LOCK	10
+		#define SECS_MAX_PRINT_TE_LOCK	10
 		long delta_ns_lock = ktime_us_delta(ts_now_lock, ts_lock_disp_last_time);
 		if( delta_ns_lock > (SECS_MAX_PRINT_TE_LOCK*1000000) ){
 			pr_info("%s: Warning, TE too fast (%d interrupts not handled last %ld secs)\n", 
@@ -136,13 +139,13 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 			ts_lock_disp_last_time = ts_now_lock;
 			lock_cnt = 0;
 		}
-
+#endif //TE_OVERFLOW_DEBUG
 		return -1;
 	}
 	lock = true;
 
 	/* Debug fps */
-#define FPS_DEBUG
+//#define FPS_DEBUG
 #ifdef FPS_DEBUG
 	long fps;
 	ktime_t ts_now = ktime_get();

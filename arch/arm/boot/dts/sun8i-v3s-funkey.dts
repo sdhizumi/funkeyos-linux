@@ -185,15 +185,11 @@
 		/* SPI freq 
 		62.5Mhz should be the max theoritical frequency 
 		to respect the display's 16ns minimum writing speed.
-		However, above 59Mhz, the speed is too high and there 
-		are some side effects making the hardware tearing line  
-		not appear consistently at the same place anymore.
-		(When the SPI->GRAM writing speed is higher than the 
-		Display<-GRAM reading spead => inconsistency in the 
-		tearing line position. Theoritically there should be no
-		tearing line at all.)
+		However, above 59Mhz, the SPI->GRAM writing speed is higher 
+		than the Display<-GRAM reading spead and it 
+		creates inconsistencies in the tearing line position. 
+		Theoritically there should be no tearing line at all.
 		*/
-		//spi-max-frequency = <80000000>;
 		spi-max-frequency = <62500000>;
 		//spi-max-frequency = <59000000>;
 		

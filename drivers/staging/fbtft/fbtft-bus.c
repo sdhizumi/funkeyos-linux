@@ -119,8 +119,10 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	// printk("%s\n", __func__);
 	if (par->pdata->te_irq_enabled && !par->ready_for_spi_async)
 		return -1;
-	if (lock)
+	if (lock){
+		pr_info("%s: Warning, TE too fast\n", __func__);
 		return -1;
+	}
 	lock = true;
 
 	/* Debug fps */
@@ -155,8 +157,11 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	}
 #endif //FPS_DEBUG
 
+	/* Set vmem buf to transfer over SPI */
+	fbtft_set_vmem_buf(par);
+
 	/* Post process screen for double buf copy, notifs, rotation soft... */
-	fbtft_post_process_screen(par);
+	fbtft_post_process_vmem(par);
 
 	/* New line to write */
 	write_line_start = par->write_line_start;
@@ -173,11 +178,25 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 
 	} 
 	/* Start sending full screen */
-	else { 
-		par->length_data_transfer = par->info->var.yres * par->info->fix.line_length;
-		write_line_start = 0;
-		write_line_end = par->info->var.yres - 1;
-		fbtft_write_init_cmd_data_transfers(par);
+	else {
+//#define FORCE_RESEND_TRANSFER_CMD 
+#ifdef FORCE_RESEND_TRANSFER_CMD
+		#warning force send SPI transfer command
+		par->must_send_data_transfer_cmd = true;
+#endif
+
+		if(par->must_send_data_transfer_cmd){
+			par->must_send_data_transfer_cmd = false;
+			par->length_data_transfer = par->info->var.yres * par->info->fix.line_length;
+			write_line_start = 0;
+			write_line_end = par->info->var.yres - 1;
+			fbtft_write_init_cmd_data_transfers(par);
+		}
+		else{
+			fbtft_write_vmem16_bus8_async(par, 
+				write_line_start * par->info->fix.line_length, 
+				par->length_data_transfer);
+		}
 	}
 	return 0;
 }

@@ -227,10 +227,12 @@ struct fbtft_par {
 	u8 *vmem_ptr;
 	u8 *vmem_post_process;
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS];
-	u8 vmem_prev_buf_idx;
+	u8 vmem_last_full_buf_idx;
 	u8 vmem_cur_buf_idx;
 	int vmem_size;
 	int nb_backbuffers_full;
+	bool force_post_process;
+
 	u8 startbyte;
 	struct fbtft_ops fbtftops;
 	spinlock_t dirty_lock;
@@ -280,6 +282,7 @@ struct fbtft_par {
 	int write_line_start;
 	int write_line_end;
 	u32 length_data_transfer;
+	bool must_send_data_transfer_cmd;
 };
 
 #define NUMARGS(...)  (sizeof((int[]){__VA_ARGS__})/sizeof(int))
@@ -304,7 +307,8 @@ int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
 void fbtft_rotate_soft(u16 *mat, int size, int rotation);
-void fbtft_post_process_screen(struct fbtft_par *par);
+void fbtft_set_vmem_buf(struct fbtft_par *par);
+void fbtft_post_process_vmem(struct fbtft_par *par);
 void fbtft_flip_backbuffer(struct fbtft_par *par);
 
 /* fbtft-io.c */

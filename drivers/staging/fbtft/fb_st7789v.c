@@ -78,6 +78,8 @@ enum st7789v_command {
 #define MADCTL_MV BIT(5) /* bitmask for page/column order */
 #define MADCTL_MX BIT(6) /* bitmask for column address order */
 #define MADCTL_MY BIT(7) /* bitmask for page address order */
+#define MADCTL_ML BIT(4) /* bitmask for LCD vertical refresh order */
+#define MADCTL_MH BIT(2) /* bitmask for LCD horizontal refresh order */
 
 /**
  * init_display() - initialize the display controller

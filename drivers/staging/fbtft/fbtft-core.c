@@ -541,87 +541,81 @@ static void fbtft_mkdirty(struct fb_info *info, int y, int height)
 	schedule_delayed_work(&info->deferred_work, fbdefio->delay);
 }
 
-void fbtft_post_process_screen(struct fbtft_par *par)
+	
+/* Get last memory buffer transferred (full or partial) */
+/* 
+This could be handled using a double mmapped buffer (or triple) 
+pointed by par->info->screen_buffer. The buffer pointed
+(the one being written) should change using the
+FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
+FB_FlipHWSurface). 
+*/
+void fbtft_set_vmem_buf(struct fbtft_par *par){
+	if(par->nb_backbuffers_full > 0){
+		//printk("%d->0\n", par->nb_backbuffers_full);
+		par->nb_backbuffers_full=0; // 0 forced (no decrement here) since only the latest one is up to date
+		par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
+	}
+	else{ // In case screen is not driven by FBIOPAN_DISPLAY ioctl
+		//printk("0\n");
+		par->vmem_ptr = par->info->screen_buffer;
+		par->force_post_process = true; //necessary (to clear HID, not rotate multiple times the same buffer etc...)
+	}
+	
+	//Bypass:
+	//par->vmem_ptr = par->info->screen_buffer;
+
+	/* Delay for tests */
+//#define DELAY_NOP	8000000
+#ifdef DELAY_NOP
+	int i;
+	for ( i = 0; i < DELAY_NOP; i++)
+		asm("nop");
+#endif
+}
+
+void fbtft_post_process_vmem(struct fbtft_par *par)
 {
 	int x_notif = 0;
 	int y_notif = 0;
-	bool screen_post_process = false;
 
 	/* bypass */
 //#define FORCE_POSTPROCESS
 #ifdef FORCE_POSTPROCESS
-	screen_post_process = true;
-	par->write_line_start = 0;
-	par->write_line_end = par->info->var.yres - 1;
+	par->force_post_process = true;
 #endif	//FORCE_POSTPROCESS
-
-	/* If soft rotation, mark whole screen to update to avoid data
-	   non rotated */
-	if (par->pdata->rotate_soft) {
-		par->write_line_start = 0;
-		par->write_line_end = par->info->var.yres - 1;
-		screen_post_process = true;
-	}
 
 	/* If notification, mark whole screen to update */
 	if (par->notification[0]) {
 		/* bypass*/
-		par->write_line_start = 0;
-		par->write_line_end = par->info->var.yres - 1;
-		screen_post_process = true;
+		par->force_post_process = true;
 	}
 
 	/* Low battery icon */
 	if (par->low_battery) {
-		par->write_line_start = 0;
-		par->write_line_end = par->info->var.yres - 1;
-		screen_post_process = true;
+		par->force_post_process = true;
 	}
-	
-	/* Get last memory buffer not written */
-	/* >1 and not >0 because we want to make sure */
-	/* application writes faster than it's read here */
-	//if(par->nb_backbuffers_full > 1){
-	if(par->nb_backbuffers_full > 0){
-		par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
-		par->nb_backbuffers_full--;
-	}
-	else{
-		par->vmem_ptr = par->info->screen_buffer;
-		par->nb_backbuffers_full = 0; // Avoid overflows, should not happen anyway
-	}
-	//par->vmem_ptr = par->vmem_back_buffers[par->vmem_prev_buf_idx];
-	//par->vmem_ptr = par->info->screen_buffer;
 
 	/* Post process */
-	if (screen_post_process) {
-		/* Copy buffer */
-		/* 
-		This should be handled using a double buffer (or
-		triple depending on game fps vs screen fps) pointed
-		by par->info->screen_buffer. The buffer pointed
-		(the one being written) should change using the
-		FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
-		FB_FlipHWSurface). This is a dirty but very
-		efficient alternative for now: we make a quick
-		memcpy of the screen_buffer in another one. It goes
-		so fast that the "applicative" tearing that could
-		happen if this function were to launch in the
-		middle of a user space SDL_BlitSurface(sw_surface,
-		NULL, hw_surface, NULL) call is rare enough not to 
-		be noticed much and it takes up so little CPU that 
-		really, it's worth the compromise for now 
+	if (par->force_post_process) {
+
+		/* Clear flag */
+		par->force_post_process = false;
+
+		/* Copy buffer before post processing
+		Since the HID for battery, notifs... 
+		is added on top of the real framebufffer, 
+		we must not write directly inside the real 
+		framebuffer or it might never be cleared.
 		*/
-		#if 1
-		//printk("m\n");
+		par->write_line_start = 0;
+		par->write_line_end = par->info->var.yres - 1;
 		memcpy(par->vmem_post_process + par->write_line_start * par->info->fix.line_length,
 			par->vmem_ptr + par->write_line_start * par->info->fix.line_length,
 			(par->write_line_end-par->write_line_start + 1) * par->info->fix.line_length);
-		//printk("n\n");
 
 		/* Change vmem ptr to send by SPI */
 		par->vmem_ptr = par->vmem_post_process;
-		#endif
 
 		/* Notifications */
 		if (par->notification[0]) {
@@ -640,11 +634,12 @@ void fbtft_post_process_screen(struct fbtft_par *par)
 		if (par->low_battery) {
 			draw_low_battery((u16 *)par->vmem_ptr, par->info->var.xres, par->info->var.yres);
 		}
-
-		/* Soft rotation */
-		if (par->pdata->rotate_soft)
-			fbtft_rotate_soft((u16*)par->vmem_ptr, par->info->var.yres, par->pdata->rotate_soft);
 	} 
+
+	/* Soft rotation */
+	if (par->pdata->rotate_soft){
+		fbtft_rotate_soft((u16*)par->vmem_ptr, par->info->var.yres, par->pdata->rotate_soft);
+	}
 }
 
 /* Copy framebuffer memory in current back buffer, then
@@ -655,10 +650,12 @@ void fbtft_flip_backbuffer(struct fbtft_par *par)
 	memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], 
 		par->info->screen_buffer, 
 		par->vmem_size);
-	par->vmem_prev_buf_idx = par->vmem_cur_buf_idx;
+	par->vmem_last_full_buf_idx = par->vmem_cur_buf_idx;
 	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
-	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS)
+	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS){
 		par->nb_backbuffers_full++;
+	}
+	//printk("f%d\n", par->nb_backbuffers_full);
 	//spin_unlock(&par->dirty_lock);
 }
 
@@ -742,8 +739,11 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 	par->write_line_start = dirty_lines_start;
 	par->write_line_end = dirty_lines_end;
 
+	/* Set vmem buf to transfer over SPI */
+	fbtft_set_vmem_buf(par);
+
 	/* Post process screen for doufle buf cpy, notifs, rotation soft... */
-	fbtft_post_process_screen(par);
+	fbtft_post_process_vmem(par);
 
 	/* Screen upgrade */
 	par->fbtftops.update_display(par, dirty_lines_start, dirty_lines_end);
@@ -1197,7 +1197,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	info->fix.ywrapstep =	   0;
 	info->fix.line_length =    width * bpp / 8;
 	info->fix.accel =          FB_ACCEL_NONE;
-	info->fix.smem_len =       vmem_size*FBTFT_VMEM_BUFS;
+	info->fix.smem_len =       vmem_size;
 
 	info->var.rotate =         pdata->rotate;
 	info->var.xres =           width;
@@ -1227,7 +1227,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		par->vmem_back_buffers[i] = vmem_back_buffers[i];
 	}
 	par->vmem_post_process = vmem_post_process;
-	par->vmem_prev_buf_idx = 0;
+	par->vmem_last_full_buf_idx = 0;
 	par->vmem_cur_buf_idx = 0;
 	par->vmem_ptr = par->info->screen_buffer + (par->vmem_cur_buf_idx*par->vmem_size);
 	par->nb_backbuffers_full = 0;
@@ -1263,8 +1263,9 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		txbuflen = 0;	/* Send whole buffer from video memory in async mode */
 
 #ifdef __LITTLE_ENDIAN
-	if ((!txbuflen) && (bpp > 8))
+	if ((!txbuflen) && (bpp > 8) && !par->spi_async_mode){
 		txbuflen = PAGE_SIZE; /* need buffer for byteswapping */
+	}
 #endif
 
 	if (txbuflen > 0) {
@@ -1373,6 +1374,7 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 	ret = par->fbtftops.init_display(par);
 	if (ret < 0)
 		goto reg_fail;
+	
 	if (par->fbtftops.set_var) {
 		ret = par->fbtftops.set_var(par);
 		if (ret < 0)
@@ -1403,9 +1405,9 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 		sprintf(text2, ", spi%d.%d at %d MHz", spi->master->bus_num,
 			spi->chip_select, spi->max_speed_hz / 1000000);
 	dev_info(fb_info->dev,
-		 "%s frame buffer, %dx%d, %d KiB video memory%s, fps=%lu%s, %s%s\n",
+		 "%s frame buffer, %dx%d, %d KiB video memory%s, %d back buffers, fps=%lu%s, %s%s\n",
 		 fb_info->fix.id, fb_info->var.xres, fb_info->var.yres,
-		 fb_info->fix.smem_len >> 10, text1,
+		 fb_info->fix.smem_len >> 10, text1, FBTFT_VMEM_BUFS,
 		 HZ / fb_info->fbdefio->delay, text2,
 		 par->spi_async_mode ? "SPI mode async, " : "",
 		 par->interlacing ? "Interlaced" : "");
@@ -1723,18 +1725,8 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 
 	if(!pdata->par->ready_for_spi_async)
 		return IRQ_HANDLED;
-
-	/* This should be enabled otherwise there will be some 
-	soft tearing if the userspace flip speed is lower than 
-	TE's IRQ speed. Why? because if we don't wxit now, we'll 
-	display the frambeffer instead of the saved backed buffers*/
-#if 0
-	if (pdata->par->nb_backbuffers_full <= 0){
-		pdata->par->nb_backbuffers_full = 0;
-		return IRQ_HANDLED;
-	}
-#endif
-
+	
+	/* Trigger new SPI transfer */
 	fbtft_start_new_screen_transfer_async(pdata->par);
 
     return IRQ_HANDLED;
@@ -1793,14 +1785,14 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 				"failed to get '%s' from DT\n", te_irq_name);
 		}
 		else{
-			pr_info("%s: '%s' = GPIO%d\n", __func__, te_irq_name, gpio);
+			pr_info("%s: %s = GPIO%d\n", __func__, te_irq_name, gpio);
 
 			pdata->te_irq_id = gpio_to_irq(gpio);
 			if(pdata->te_irq_id < 0) {
 		        dev_err(dev,"%s - Unable to request IRQ: %d\n", __func__, pdata->te_irq_id);
 		    }
 		    else{
-				pr_info("TE GPIO%d, IRQ id = %d\n", gpio, pdata->te_irq_id);
+				pr_info("%s: TE GPIO%d => IRQ id = %d\n", __func__, gpio, pdata->te_irq_id);
 				pdata->te_irq_enabled = true;
 			}
 		}
@@ -1928,15 +1920,22 @@ int fbtft_probe_common(struct fbtft_display *display,
 
 	/* use platform_data provided functions above all */
 	fbtft_merge_fbtftops(&par->fbtftops, &pdata->display.fbtftops);
-
+	
 	ret = fbtft_register_framebuffer(info);
 	if (ret < 0)
 		goto out_release;
 
 	/** Initialize TE interrupt */
 	if(par->pdata->te_irq_enabled){
-		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, IRQF_SHARED | IRQF_TRIGGER_RISING,
-	               "TE", par->pdata);
+		/*err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
+				IRQF_SHARED | IRQF_TRIGGER_RISING,
+	            "TE", par->pdata);*/
+		/* Should be rising according to the datasheet 
+		(time when display is not reading GRAM)
+		but falling is better in practice */
+		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
+				IRQF_SHARED | IRQF_TRIGGER_FALLING,
+	            "TE", par->pdata);
 		if (err < 0) {
 			dev_err(dev,"ERROR initializing TE signal irq\n");
 			par->pdata->te_irq_enabled = false;
@@ -1945,6 +1944,7 @@ int fbtft_probe_common(struct fbtft_display *display,
 
 	/* Start constant Display update using spi async */
 	if (par->spi_async_mode) {
+		par->must_send_data_transfer_cmd = true;
 		par->write_line_start = 0;
 		par->write_line_end = par->info->var.yres - 1;
 		if (par->pdata->te_irq_enabled){

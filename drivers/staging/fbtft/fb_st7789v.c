@@ -81,6 +81,8 @@ enum st7789v_command {
 #define MADCTL_ML BIT(4) /* bitmask for LCD vertical refresh order */
 #define MADCTL_MH BIT(2) /* bitmask for LCD horizontal refresh order */
 
+#define FRCTRL2_COL_INV	0xE0
+
 /**
  * init_display() - initialize the display controller
  *
@@ -97,6 +99,7 @@ enum st7789v_command {
  */
 static int init_display(struct fbtft_par *par)
 {
+
 #ifndef SAEF_SETTINGS
 	/* Software reset */
 	write_reg(par, 0x01);
@@ -118,7 +121,6 @@ static int init_display(struct fbtft_par *par)
 	write_reg(par, 0xC2,0x01);
 	write_reg(par, 0xC3,0x13);
 	write_reg(par, 0xC4,0x20);
-	write_reg(par, 0xC6,0x0F);
 	write_reg(par, 0xD6,0xA1);
 	write_reg(par, 0xD0,0xA4,0xA1);
 	/*write_reg(par, 0x21);
@@ -181,21 +183,27 @@ static int init_display(struct fbtft_par *par)
 	/*uint16_t tearline=10;
 	write_reg(par, STE, (tearline>>8), (tearline&0xff) );*/
 
-	/* refresh rate */
-	//write_reg(par, 0xC6,0x1F); //39Hz
-	//write_reg(par, 0xC6,0x1A); //44Hz
-	//write_reg(par, 0xC6,0x18); //46Hz
-	write_reg(par, 0xC6,0x17); //48Hz
-	//write_reg(par, 0xC6,0x16); //49Hz
-	//write_reg(par, 0xC6,0x15); //50Hz
-	//write_reg(par, 0xC6,0x14); //52Hz
-	//write_reg(par, 0xC6,0x12); //55Hz
-	//write_reg(par, 0xC6,0x10); //58Hz
-	//write_reg(par, 0xC6,0x0F); //60Hz
-	//write_reg(par, 0xC6,0x09); //60Hz
-	//write_reg(par, 0xC6,0x03); //99Hz
-	//write_reg(par, 0xC6,0x02); //105Hz -> good one when no TE signal
+	/* Refresh rate */
+	u8 frctrl2_par = 0;
+	//frctrl2_par |= FRCTRL2_COL_INV;
 
+	//frctrl2_par |= 0x1F; //39Hz
+	//frctrl2_par |= 0x1A; //44Hz
+	//frctrl2_par |= 0x18; //46Hz
+	//frctrl2_par |= 0x17; //48Hz -> FKS v1
+	//frctrl2_par |= 0x16; //49Hz
+	//frctrl2_par |= 0x15; //50Hz
+	//frctrl2_par |= 0x14; //52Hz
+	//frctrl2_par |= 0x12; //55Hz
+	//frctrl2_par |= 0x11; //57Hz
+	//frctrl2_par |= 0x10; //58Hz
+	frctrl2_par |= 0x0F; //60Hz
+	//frctrl2_par |= 0x0D; //64Hz
+	//frctrl2_par |= 0x09; //75Hz
+	//frctrl2_par |= 0x03; //99Hz
+	//frctrl2_par |= 0x02; //105Hz -> good one when no TE signal
+
+	/* Turn on display */
 	write_reg(par, MIPI_DCS_SET_DISPLAY_ON);
 
 	return 0;
@@ -218,7 +226,7 @@ static int set_var(struct fbtft_par *par)
 	case 0:
 		break;
 	case 90:
-		madctl_par |= (MADCTL_MV | MADCTL_MY);
+		madctl_par |= (MADCTL_MV | MADCTL_MY | MADCTL_ML);
 		break;
 	case 180:
 		madctl_par |= (MADCTL_MX | MADCTL_MY);

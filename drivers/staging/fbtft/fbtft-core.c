@@ -1932,7 +1932,8 @@ int fbtft_probe_common(struct fbtft_display *display,
 	            "TE", par->pdata);*/
 		/* Should be rising according to the datasheet 
 		(time when display is not reading GRAM)
-		but falling is better in practice */
+		but falling is better in practice sonce it gives 
+		some delay that hides the tearing line */
 		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
 				IRQF_SHARED | IRQF_TRIGGER_FALLING,
 	            "TE", par->pdata);

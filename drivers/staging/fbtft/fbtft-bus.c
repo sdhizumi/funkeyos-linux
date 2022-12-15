@@ -121,7 +121,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 		return -1;
 	if (lock){
 /* Debug TE overflows */
-//#define TE_OVERFLOW_DEBUG
+#define TE_OVERFLOW_DEBUG
 #ifdef TE_OVERFLOW_DEBUG
 		static ktime_t ts_lock_disp_last_time;
 		static int lock_cnt = 0;
@@ -145,7 +145,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	lock = true;
 
 	/* Debug fps */
-//#define FPS_DEBUG
+#define FPS_DEBUG
 #ifdef FPS_DEBUG
 	long fps;
 	ktime_t ts_now = ktime_get();

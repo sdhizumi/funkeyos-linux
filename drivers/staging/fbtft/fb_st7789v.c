@@ -65,6 +65,7 @@ enum st7789v_command {
 	PORCTRL = 0xB2,
 	GCTRL = 0xB7,
 	VCOMS = 0xBB,
+	LCMCTRL = 0xC0,
 	VDVVRHEN = 0xC2,
 	VRHS = 0xC3,
 	VDVS = 0xC4,
@@ -114,10 +115,23 @@ static int init_display(struct fbtft_par *par)
 
 	write_reg(par, 0xB0, 0x00, 0xF8); // RAMCTRL: little endian
 
-	write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);
+	/* Back/front porch */
+	/* A good alternaive here to be sure the display read is done
+	before the SPI write (since TE mode 2 + scanline solution 
+	does not work), is to reduce the back porch and raise the front porch
+	while leaving equal the sum of both */
+	//#warning 	Tests with back porch
+	write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);	//default
+	//write_reg(par, 0xB2,0x7F,0x7F,0x00,0x33,0x33);	//max
+	
 	write_reg(par, 0xB7,0x00);
 	write_reg(par, 0xBB,0x36);
-	//write_reg(par, 0xC0,0x2C);
+	
+	//#warning tests LCMCTRL
+	//write_reg(par, 0xC0,0x2C);	// default
+	//write_reg(par, 0xC0,0x2D); 	// gate inversion
+	//write_reg(par, 0xC0,0x2E);	// XOR MV setting
+
 	write_reg(par, 0xC2,0x01);
 	write_reg(par, 0xC3,0x13);
 	write_reg(par, 0xC4,0x20);
@@ -128,6 +142,12 @@ static int init_display(struct fbtft_par *par)
 	write_reg(par, 0xE1,0x00,0x18,0x1E,0x0A,0x09,0x25,0x3F,0x43,0x52,0x33,0x03,0x00,0x3F,0x3F);
 	write_reg(par, 0x29);*/
 
+	//#warning tests GATECTRL
+	//write_reg(par, 0xE4, 0x27, 0x00, 0x10);	// default
+	//write_reg(par, 0xE4, 0x27, 0x00, 0x11);	// Gate scan direction 319->0
+	//write_reg(par, 0xE4, 0x27, 0x00, 0x14);	// non-interlace mode
+	//write_reg(par, 0xE4, 0x27, 0x20, 0x10);	// 320 gate lines, first can line is 159/319
+	//write_reg(par, 0xE4, 0x1E, 0x00, 0x10);	// 240 gate lines, first line is 0
 #else
 	/* turn off sleep mode */
 	write_reg(par, MIPI_DCS_EXIT_SLEEP_MODE);
@@ -177,10 +197,11 @@ static int init_display(struct fbtft_par *par)
 	write_reg(par, 0x21);
 
 	/* Activate TE signal for Vsync only */
-	write_reg(par, TEON, 0x00);
+	write_reg(par, TEON, 0x00); // Mode 1 (only Vsync)
+	//write_reg(par, TEON, 0x01); // Mode 2 (all Vsync and Hsync) - Not working: no te received at all
 
 	/* Set TE tearline */
-	/*uint16_t tearline=10;
+	/*const uint16_t tearline=10;
 	write_reg(par, STE, (tearline>>8), (tearline&0xff) );*/
 
 	/* Refresh rate */
@@ -226,7 +247,7 @@ static int set_var(struct fbtft_par *par)
 	case 0:
 		break;
 	case 90:
-		madctl_par |= (MADCTL_MV | MADCTL_MY | MADCTL_ML);
+		madctl_par |= (MADCTL_MV | MADCTL_MY);
 		break;
 	case 180:
 		madctl_par |= (MADCTL_MX | MADCTL_MY);

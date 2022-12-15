@@ -204,7 +204,7 @@
 		since there isn't the equivalent of 
 		MV (x/y inversion) for the display 
 		read (from GRAM) order */
-		rotate = <0>;	
+		//rotate = <90>;	
 		
 		/* Software rotate (Clockwise)
 		0, 90 or 270 accepted */

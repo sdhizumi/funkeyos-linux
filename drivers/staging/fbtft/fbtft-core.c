@@ -479,7 +479,8 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 	}
 }
 
-/* Soft Matrix Rotation - Works only on 2D square matrices */
+/* Soft Matrix Rotation with only 1 pixel of extra RAM needed
+Works only on 2D square matrices */
 void fbtft_rotate_soft(u16 *mat, int size, int rotation)
 {
 	int i, j;
@@ -565,8 +566,8 @@ void fbtft_set_vmem_buf(struct fbtft_par *par){
 	//Bypass:
 	//par->vmem_ptr = par->info->screen_buffer;
 
-	/* Delay for tests */
-//#define DELAY_NOP	8000000
+	/* Controlled delay for tests */
+//#define DELAY_NOP	5500000
 #ifdef DELAY_NOP
 	int i;
 	for ( i = 0; i < DELAY_NOP; i++)
@@ -586,17 +587,12 @@ void fbtft_post_process_vmem(struct fbtft_par *par)
 #endif	//FORCE_POSTPROCESS
 
 	/* If notification, mark whole screen to update */
-	if (par->notification[0]) {
-		/* bypass*/
+	if (par->notification[0] ||
+		par->low_battery) {
 		par->force_post_process = true;
 	}
 
-	/* Low battery icon */
-	if (par->low_battery) {
-		par->force_post_process = true;
-	}
-
-	/* Post process */
+	/* Copy to post process buffer before HID */
 	if (par->force_post_process) {
 
 		/* Clear flag */
@@ -1708,11 +1704,11 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 {
     struct fbtft_platform_data *pdata = (struct fbtft_platform_data *) dev_id;
 
-//#define DEBUG_TE_IRQ_COUNT
+#define DEBUG_TE_IRQ_COUNT
 #ifdef DEBUG_TE_IRQ_COUNT
     static ktime_t prev_ts = 0;
     static int te_count = 0;
-    static int nb_sec = 5;
+    static const int nb_sec = 5;
     te_count++;
 
 	ktime_t ts_now = ktime_get();
@@ -1927,13 +1923,14 @@ int fbtft_probe_common(struct fbtft_display *display,
 
 	/** Initialize TE interrupt */
 	if(par->pdata->te_irq_enabled){
+		/* Setting TE interrupt on Falling edge for now.
+		Should be rising according to the datasheet 
+		(time when display is not reading GRAM)
+		but falling is better in practice since it gives 
+		some delay that hides the tearing line */
 		/*err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
 				IRQF_SHARED | IRQF_TRIGGER_RISING,
 	            "TE", par->pdata);*/
-		/* Should be rising according to the datasheet 
-		(time when display is not reading GRAM)
-		but falling is better in practice sonce it gives 
-		some delay that hides the tearing line */
 		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
 				IRQF_SHARED | IRQF_TRIGGER_FALLING,
 	            "TE", par->pdata);

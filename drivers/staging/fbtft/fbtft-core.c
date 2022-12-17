@@ -47,6 +47,13 @@
 #include "fb_text.h"
 #include "internal.h"
 
+#ifdef __ARM_NEON__
+#undef __ARM_NEON__
+#warning fbtft-core should not be compiled with -D __ARM_NEON__
+#endif
+#include <asm/neon.h>
+#include "fbtft-utils_neon.h"
+
 static unsigned long debug;
 module_param(debug, ulong, 0000);
 MODULE_PARM_DESC(debug, "override device debug level");
@@ -432,6 +439,11 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 		else if (par->pdata->rotate == 180)
 			par->fbtftops.set_addr_win(par, 0, 80,
 				par->info->var.xres - 1, 320 - 1);
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
+		else if (par->pdata->rotate_soft == 270)
+			par->fbtftops.set_addr_win(par, start_line, 80,
+				end_line, 320-1);
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
 		else
 			par->fbtftops.set_addr_win(par, 0, start_line,
 				par->info->var.xres - 1, end_line);
@@ -559,8 +571,11 @@ void fbtft_set_vmem_buf(struct fbtft_par *par){
 	}
 	else{ // In case screen is not driven by FBIOPAN_DISPLAY ioctl
 		//printk("0\n");
-		par->vmem_ptr = par->info->screen_buffer;
-		par->force_post_process = true; //necessary (to clear HID, not rotate multiple times the same buffer etc...)
+		/* Post process screen for double buf copy, notifs, rotation soft... */
+		par->vmem_ptr = fbtft_vmem_add_hid(par, par->info->screen_buffer, false);
+		if (par->pdata->rotate_soft){
+			par->vmem_ptr = fbtft_vmem_rotate(par, par->vmem_ptr, par->vmem_rotation);
+		}
 	}
 	
 	//Bypass:
@@ -575,28 +590,33 @@ void fbtft_set_vmem_buf(struct fbtft_par *par){
 #endif
 }
 
-void fbtft_post_process_vmem(struct fbtft_par *par)
+
+u8 *fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, bool direct)
 {
+	/* Vars */
 	int x_notif = 0;
 	int y_notif = 0;
 
-	/* bypass */
-//#define FORCE_POSTPROCESS
-#ifdef FORCE_POSTPROCESS
-	par->force_post_process = true;
-#endif	//FORCE_POSTPROCESS
-
-	/* If notification, mark whole screen to update */
-	if (par->notification[0] ||
-		par->low_battery) {
-		par->force_post_process = true;
+	/* Vmem */
+	u8 *vmem = par->vmem_ptr;
+	if(vmem_src){
+		vmem = vmem_src;
+	}
+	
+	/* Exit if nothing to display */
+	if (!par->notification[0] &&
+		!par->low_battery){
+		return vmem;
 	}
 
-	/* Copy to post process buffer before HID */
-	if (par->force_post_process) {
+	/* Bypass */
+//#define FORCE_POSTPROCESS_COPY
+#ifdef FORCE_POSTPROCESS_COPY
+	direct = false;
+#endif	//FORCE_POSTPROCESS_COPY
 
-		/* Clear flag */
-		par->force_post_process = false;
+	/* Copy to post process buffer before post process */
+	if (!direct) {
 
 		/* Copy buffer before post processing
 		Since the HID for battery, notifs... 
@@ -606,36 +626,92 @@ void fbtft_post_process_vmem(struct fbtft_par *par)
 		*/
 		par->write_line_start = 0;
 		par->write_line_end = par->info->var.yres - 1;
-		memcpy(par->vmem_post_process + par->write_line_start * par->info->fix.line_length,
-			par->vmem_ptr + par->write_line_start * par->info->fix.line_length,
-			(par->write_line_end-par->write_line_start + 1) * par->info->fix.line_length);
+		memcpy(par->vmem_postprocess_cpy, vmem,
+			par->info->var.yres * par->info->fix.line_length);
 
 		/* Change vmem ptr to send by SPI */
-		par->vmem_ptr = par->vmem_post_process;
+		vmem = par->vmem_postprocess_cpy;
+	}
 
-		/* Notifications */
-		if (par->notification[0]) {
-			x_notif = 0;
-			y_notif = 0;
-			basic_text_out16_bg((u16 *)par->vmem_ptr, par->info->var.xres, par->info->var.yres,
-				x_notif, y_notif, RGB565(255, 255, 255), RGB565(0, 0, 0), par->notification);
+	/* Notifications */
+	if (par->notification[0]) {
+		x_notif = 0;
+		y_notif = 0;
+		basic_text_out16_bg((u16 *)vmem, par->info->var.xres, par->info->var.yres,
+			x_notif, y_notif, RGB565(255, 255, 255), RGB565(0, 0, 0), par->notification);
 
-			if (y_notif < par->write_line_start)
-				par->write_line_start = y_notif;
-			if (y_notif + MONACO_HEIGHT > par->write_line_end)
-				par->write_line_end = y_notif + MONACO_HEIGHT;
-		}
+		if (y_notif < par->write_line_start)
+			par->write_line_start = y_notif;
+		if (y_notif + MONACO_HEIGHT > par->write_line_end)
+			par->write_line_end = y_notif + MONACO_HEIGHT;
+	}
 
-		/* Low battery icon */
-		if (par->low_battery) {
-			draw_low_battery((u16 *)par->vmem_ptr, par->info->var.xres, par->info->var.yres);
-		}
-	} 
+	/* Low battery icon */
+	if (par->low_battery) {
+		draw_low_battery((u16 *)vmem, par->info->var.xres, par->info->var.yres);
+	}
+
+	return vmem;
+}
+
+
+u8 *fbtft_vmem_rotate(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
+{
+	/* Vars */
+
+	/* Interrupt context ? */
+	//printk("%s called %s interrupt\n", __func__, in_interrupt()?"from":"outside of");
 
 	/* Soft rotation */
-	if (par->pdata->rotate_soft){
-		fbtft_rotate_soft((u16*)par->vmem_ptr, par->info->var.yres, par->pdata->rotate_soft);
+//#define DEBUG_ROTATE_TIME
+
+#ifdef DEBUG_ROTATE_TIME
+	ktime_t ts_now = ktime_get();
+#endif //DEBUG_ROTATE_TIME
+
+
+#ifndef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	// Square rotate (best performace RAM and CPU - only for square matrices)
+	// Self contained buffer, no need for vmem_rotation
+	fbtft_rotate_soft((u16*)vmem_src, par->info->var.yres, par->pdata->rotate_soft);
+	vmem_dst = vmem_src;
+	
+	#ifdef DEBUG_ROTATE_TIME
+	printk("rot: %ld\n", ktime_to_ns(ktime_sub(ktime_get(), ts_now)) );
+	ts_now = ktime_get();
+	#endif //DEBUG_ROTATE_TIME
+
+#else //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	/* Transpose instead of rotate */
+	if(!in_interrupt()){
+		/* NEON optimized transpose */
+		// Not working in interrupt contexts (trap)
+		// Use slow translate instead
+		preempt_disable();
+		kernel_neon_begin();
+		fbtft_transpose_neon((u16*) vmem_src, (u16*) vmem_dst, 
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
 	}
+	else{	// Slower software translate for interrupt contexts
+		// (slower than rotate, cannot reach 60fps)
+		int x, y;
+		u16 *s = (u16*) vmem_src; 
+		u16 *d = (u16*) vmem_dst; 
+		for (y=0; y<par->info->var.yres; y++){
+			for (x=0; x<par->info->var.xres; x++){
+				d[x*par->info->var.yres + y] = s[y*par->info->var.xres+x];
+			}
+		}
+	}
+	
+	#ifdef DEBUG_ROTATE_TIME
+	printk("trans: %ld\n", ktime_to_ns(ktime_sub(ktime_get(), ts_now)) );
+	//ts_now = ktime_get();
+	#endif //DEBUG_ROTATE_TIME
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	return vmem_dst;
 }
 
 /* Copy framebuffer memory in current back buffer, then
@@ -643,9 +719,17 @@ change current back buffer */
 void fbtft_flip_backbuffer(struct fbtft_par *par)
 {
 	//spin_lock(&par->dirty_lock);
+#if 0
 	memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], 
 		par->info->screen_buffer, 
 		par->vmem_size);
+#else
+	u8 *vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, false);
+	if (par->pdata->rotate_soft){
+		fbtft_vmem_rotate(par, vmem, par->vmem_back_buffers[par->vmem_cur_buf_idx]);
+	}
+#endif
+
 	par->vmem_last_full_buf_idx = par->vmem_cur_buf_idx;
 	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
 	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS){
@@ -703,7 +787,6 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 				nb_fps_values = 0;
 			}
 		}
-
 	#endif //FPS_DEBUG
 
 	spin_lock(&par->dirty_lock);
@@ -738,8 +821,11 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 	/* Set vmem buf to transfer over SPI */
 	fbtft_set_vmem_buf(par);
 
-	/* Post process screen for doufle buf cpy, notifs, rotation soft... */
-	fbtft_post_process_vmem(par);
+	/* Post process screen for double buf cpy, notifs, rotation soft... */
+	par->vmem_ptr = fbtft_vmem_add_hid(par, NULL, false);
+	if (par->pdata->rotate_soft){
+		par->vmem_ptr = fbtft_vmem_rotate(par, par->vmem_ptr, par->vmem_rotation);
+	}
 
 	/* Screen upgrade */
 	par->fbtftops.update_display(par, dirty_lines_start, dirty_lines_end);
@@ -1055,7 +1141,8 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	struct fb_deferred_io *fbdefio = NULL;
 	u8 *vmem = NULL;
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS] = {NULL};
-	u8 *vmem_post_process = NULL;
+	u8 *vmem_postprocess_cpy = NULL;
+	u8 *vmem_rotation = NULL;
 	void *txbuf = NULL;
 	void *buf = NULL;
 	unsigned int width;
@@ -1112,7 +1199,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	display->debug |= debug;
 	fbtft_expand_debug_value(&display->debug);
 
-	switch (pdata->rotate) {
+	switch (pdata->rotate || pdata->rotate_soft) {
 	case 90:
 	case 270:
 		width =  display->height;
@@ -1132,10 +1219,15 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 			goto alloc_fail;
 	}
 
-	vmem_post_process = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
-	//vmem_post_process = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
-	//vmem_post_process = vzalloc(vmem_size);
-	if (!vmem_post_process)
+	vmem_postprocess_cpy = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
+	//vmem_postprocess_cpy = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
+	//vmem_postprocess_cpy = vzalloc(vmem_size);
+	if (!vmem_postprocess_cpy)
+		goto alloc_fail;
+	
+
+	vmem_rotation = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
+	if (!vmem_rotation)
 		goto alloc_fail;
 
 	fbops = devm_kzalloc(dev, sizeof(struct fb_ops), GFP_KERNEL);
@@ -1222,7 +1314,8 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	{
 		par->vmem_back_buffers[i] = vmem_back_buffers[i];
 	}
-	par->vmem_post_process = vmem_post_process;
+	par->vmem_postprocess_cpy = vmem_postprocess_cpy;
+	par->vmem_rotation = vmem_rotation;
 	par->vmem_last_full_buf_idx = 0;
 	par->vmem_cur_buf_idx = 0;
 	par->vmem_ptr = par->info->screen_buffer + (par->vmem_cur_buf_idx*par->vmem_size);
@@ -1928,12 +2021,12 @@ int fbtft_probe_common(struct fbtft_display *display,
 		(time when display is not reading GRAM)
 		but falling is better in practice since it gives 
 		some delay that hides the tearing line */
-		/*err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
-				IRQF_SHARED | IRQF_TRIGGER_RISING,
-	            "TE", par->pdata);*/
 		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
-				IRQF_SHARED | IRQF_TRIGGER_FALLING,
+				IRQF_SHARED | IRQF_TRIGGER_RISING,
 	            "TE", par->pdata);
+		/*err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
+				IRQF_SHARED | IRQF_TRIGGER_FALLING,
+	            "TE", par->pdata);*/
 		if (err < 0) {
 			dev_err(dev,"ERROR initializing TE signal irq\n");
 			par->pdata->te_irq_enabled = false;

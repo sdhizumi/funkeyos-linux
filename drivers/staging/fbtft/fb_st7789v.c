@@ -117,8 +117,8 @@ static int init_display(struct fbtft_par *par)
 
 	/* Back/front porch */
 	/* A good alternaive here to be sure the display read is done
-	before the SPI write (since TE mode 2 + scanline solution 
-	does not work), is to reduce the back porch and raise the front porch
+	before the SPI write, is to reduce the back porch 
+	and raise the front porch
 	while leaving equal the sum of both */
 	//#warning 	Tests with back porch
 	write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);	//default
@@ -198,7 +198,7 @@ static int init_display(struct fbtft_par *par)
 
 	/* Activate TE signal for Vsync only */
 	write_reg(par, TEON, 0x00); // Mode 1 (only Vsync)
-	//write_reg(par, TEON, 0x01); // Mode 2 (all Vsync and Hsync) - Not working: no te received at all
+	//write_reg(par, TEON, 0x01); // Mode 2 (all Vsync and Hsync) - Not working: no TE interrupt received at all
 
 	/* Set TE tearline */
 	/*const uint16_t tearline=10;
@@ -258,6 +258,21 @@ static int set_var(struct fbtft_par *par)
 	default:
 		return -EINVAL;
 	}
+
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	switch (par->pdata->rotate_soft) {
+	case 90:
+	case 270:
+		madctl_par |= (MADCTL_MY | MADCTL_ML);		
+		//write_reg(par, 0xE4, 0x1E, 0x00, 0x10);	// 240 gate lines, first line is 0
+		//write_reg(par, 0xE4, 0x1E, 0x00, 0x11);	// 240 gate lines, first line is 0 and gate inversion
+		//write_reg(par, 0xE4, 0x1E, 0x15, 0x11);	// 240 gate lines, first line is 120 and gate inversion
+		break;
+	default:
+		return -EINVAL;
+	}
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+
 	write_reg(par, MIPI_DCS_SET_ADDRESS_MODE, madctl_par);
 
 	// All offset operations are done after in fbtft_set_addr_win, not here

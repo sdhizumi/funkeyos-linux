@@ -179,9 +179,6 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	/* Set vmem buf to transfer over SPI */
 	fbtft_set_vmem_buf(par);
 
-	/* Post process screen for double buf copy, notifs, rotation soft... */
-	fbtft_post_process_vmem(par);
-
 	/* New line to write */
 	write_line_start = par->write_line_start;
 	write_line_end = par->write_line_end;

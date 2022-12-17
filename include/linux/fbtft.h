@@ -22,6 +22,7 @@
 
 
 #define FBTFT_VMEM_BUFS					3
+#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 
 #define FBTFT_ONBOARD_BACKLIGHT 		2
 #define FBTFT_GPIO_NO_MATCH				0xFFFF
@@ -225,7 +226,8 @@ struct fbtft_par {
 	} txbuf;
 	u8 *buf;
 	u8 *vmem_ptr;
-	u8 *vmem_post_process;
+	u8 *vmem_postprocess_cpy;
+	u8 *vmem_rotation;
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS];
 	u8 vmem_last_full_buf_idx;
 	u8 vmem_cur_buf_idx;
@@ -308,7 +310,8 @@ int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
 void fbtft_rotate_soft(u16 *mat, int size, int rotation);
 void fbtft_set_vmem_buf(struct fbtft_par *par);
-void fbtft_post_process_vmem(struct fbtft_par *par);
+u8 * fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, bool direct);
+u8 *fbtft_vmem_rotate(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst);
 void fbtft_flip_backbuffer(struct fbtft_par *par);
 
 /* fbtft-io.c */

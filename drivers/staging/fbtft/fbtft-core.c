@@ -440,9 +440,14 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 			par->fbtftops.set_addr_win(par, 0, 80,
 				par->info->var.xres - 1, 320 - 1);
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
-		else if (par->pdata->rotate_soft == 270)
-			par->fbtftops.set_addr_win(par, start_line, 80,
-				end_line, 320-1);
+		else if (par->pdata->rotate_soft == 270){
+			/*par->fbtftops.set_addr_win(par, start_line, 80,
+				end_line, 320-1);*/
+				
+			const u16 y_offset = 7; //pixels (because first scanline is at idx 240 instead of 239)
+			par->fbtftops.set_addr_win(par, start_line, y_offset,
+				end_line, y_offset+240-1);
+		}
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
 		else
 			par->fbtftops.set_addr_win(par, 0, start_line,
@@ -715,20 +720,16 @@ u8 *fbtft_vmem_rotate(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
 }
 
 /* Copy framebuffer memory in current back buffer, then
-change current back buffer */
+change current back buffer 
+Used by FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
+FB_FlipHWSurface */
 void fbtft_flip_backbuffer(struct fbtft_par *par)
 {
 	//spin_lock(&par->dirty_lock);
-#if 0
-	memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], 
-		par->info->screen_buffer, 
-		par->vmem_size);
-#else
 	u8 *vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, false);
 	if (par->pdata->rotate_soft){
 		fbtft_vmem_rotate(par, vmem, par->vmem_back_buffers[par->vmem_cur_buf_idx]);
 	}
-#endif
 
 	par->vmem_last_full_buf_idx = par->vmem_cur_buf_idx;
 	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;

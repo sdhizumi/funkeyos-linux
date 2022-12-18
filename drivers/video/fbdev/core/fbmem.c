@@ -32,7 +32,6 @@
 #include <linux/device.h>
 #include <linux/efi.h>
 #include <linux/fb.h>
-#include <linux/fbtft.h>
 #include <linux/fbcon.h>
 #include <linux/mem_encrypt.h>
 
@@ -1148,7 +1147,6 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		ret = fb_cmap_to_user(&cmap_from, &cmap);
 		break;
 	case FBIOPAN_DISPLAY:
-
 		if (copy_from_user(&var, argp, sizeof(var)))
 			return -EFAULT;
 		console_lock();
@@ -1157,10 +1155,6 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			return -ENODEV;
 		}
 		ret = fb_pan_display(info, &var);
-
-		/** fbtft switch buffer */
-		fbtft_flip_backbuffer(info->par);
-		
 		unlock_fb_info(info);
 		console_unlock();
 		if (ret == 0 && copy_to_user(argp, &var, sizeof(var)))

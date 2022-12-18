@@ -723,7 +723,7 @@ u8 *fbtft_vmem_rotate(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
 change current back buffer 
 Used by FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
 FB_FlipHWSurface */
-void fbtft_flip_backbuffer(struct fbtft_par *par)
+static void fbtft_flip_backbuffer(struct fbtft_par *par)
 {
 	//spin_lock(&par->dirty_lock);
 	u8 *vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, false);
@@ -1074,6 +1074,22 @@ static int fbtft_fb_blank(int blank, struct fb_info *info)
 	return ret;
 }
 
+static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *info)
+{
+	struct fbtft_par *par = info->par;
+	int ret = -EINVAL;
+
+	dev_dbg(info->dev, "%s\n", __func__);
+
+	printk("%s, l.%d", __func__, __LINE__);
+
+	var->xoffset = 0;
+	var->yoffset = 0;
+	fbtft_flip_backbuffer(par);
+	
+	return -ENODEV; // forced or SDL segfaults (when flipping surface->pixels buffer. In our case it shoud not be done, we have 1 pixel buffer to save ram)
+}
+
 static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
 {
 	if (src->write)
@@ -1098,6 +1114,8 @@ static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
 		dst->init_display = src->init_display;
 	if (src->blank)
 		dst->blank = src->blank;
+	if (src->fb_pan_display)
+		dst->fb_pan_display = src->fb_pan_display;
 	if (src->request_gpios_match)
 		dst->request_gpios_match = src->request_gpios_match;
 	if (src->request_gpios)
@@ -1261,14 +1279,15 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	info->fbops = fbops;
 	info->fbdefio = fbdefio;
 
-	fbops->owner        =      dev->driver->owner;
-	fbops->fb_read      =      fb_sys_read;
-	fbops->fb_write     =      fbtft_fb_write;
-	fbops->fb_fillrect  =      fbtft_fb_fillrect;
-	fbops->fb_copyarea  =      fbtft_fb_copyarea;
-	fbops->fb_imageblit =      fbtft_fb_imageblit;
-	fbops->fb_setcolreg =      fbtft_fb_setcolreg;
-	fbops->fb_blank     =      fbtft_fb_blank;
+	fbops->owner        	=      dev->driver->owner;
+	fbops->fb_read      	=      fb_sys_read;
+	fbops->fb_write     	=      fbtft_fb_write;
+	fbops->fb_fillrect  	=      fbtft_fb_fillrect;
+	fbops->fb_copyarea  	=      fbtft_fb_copyarea;
+	fbops->fb_imageblit 	=      fbtft_fb_imageblit;
+	fbops->fb_setcolreg 	=      fbtft_fb_setcolreg;
+	fbops->fb_blank     	=      fbtft_fb_blank;
+	fbops->fb_pan_display   =      fbtft_fb_pan_display;
 
 	fbdefio->delay =           HZ/fps;
 	fbdefio->deferred_io =     fbtft_deferred_io;

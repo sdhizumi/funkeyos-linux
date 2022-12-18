@@ -89,6 +89,7 @@ struct fbtft_ops {
 				unsigned int start_line, unsigned int end_line);
 	int (*init_display)(struct fbtft_par *par);
 	int (*blank)(struct fbtft_par *par, bool on);
+	int (*fb_pan_display)(struct fb_var_screeninfo *var, struct fb_info *info);
 
 	unsigned long (*request_gpios_match)(struct fbtft_par *par,
 		const struct fbtft_gpio *gpio);
@@ -312,7 +313,6 @@ void fbtft_rotate_soft(u16 *mat, int size, int rotation);
 void fbtft_set_vmem_buf(struct fbtft_par *par);
 u8 * fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, bool direct);
 u8 *fbtft_vmem_rotate(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst);
-void fbtft_flip_backbuffer(struct fbtft_par *par);
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);

@@ -421,7 +421,8 @@ static ssize_t store_switch_backbuf(struct device *device,
 			   const char *buf, size_t count)
 {
 	struct fb_info *fb_info = dev_get_drvdata(device);
-	fbtft_flip_backbuffer(fb_info->par);
+	//fbtft_flip_backbuffer(fb_info->par);
+	fb_info->fbops->fb_pan_display(NULL, fb_info);
 	
 	return count;
 }

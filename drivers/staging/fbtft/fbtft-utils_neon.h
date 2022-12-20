@@ -23,4 +23,22 @@
 */
 void fbtft_transpose_neon(u16 *src, u16* dst, int w, int h);
 
+/*  
+    NEON optimized matrix transpose inverse
+    (dimensions multiple of 4, 16bits pixels)
+*/
+void fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h);
+
+/*  
+    NEON optimized matrix rotate 90° CW 
+    (dimensions multiple of 4, 16bits pixels)
+*/
+void fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h);
+
+/*  
+    NEON optimized matrix rotate 270° CW
+    (dimensions multiple of 4, 16bits pixels)
+*/
+void fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h);
+
 #endif //__LINUX_FBTFT_UTILS_NEON_H

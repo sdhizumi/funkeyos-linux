@@ -12,9 +12,7 @@
  * GNU General Public License for more details.
  */
 
-
-
-#ifndef __ARM_NEON__
+#if !defined(__ARM_NEON__) || !defined(__ARM_FP)
 #error You should compile this file with '-mfloat-abi=softfp -mfpu=neon'
 #endif
 
@@ -39,14 +37,13 @@
 #include "fbtft-utils_neon.h"
 #include <arm_neon.h>
 
-
-/* 	
-	NEON optimized matrix transpose 
- 	(dimensions multiple of 4, 16bits pixels)
+/*  
+    NEON optimized matrix transpose 
+    (dimensions multiple of 4, 16bits pixels)
 */
-void fbtft_transpose_neon(u16* src, u16* dst, int w, int h){
-	
-	/* Vars */
+void fbtft_transpose_neon(uint16_t* src, uint16_t* dst, int w, int h){
+    
+    /* Vars */
     uint16x4x4_t v_tmp;
     int y, x;
 
@@ -65,6 +62,93 @@ void fbtft_transpose_neon(u16* src, u16* dst, int w, int h){
             vst4_lane_u16(dst + (x+1)*h + y, v_tmp, 1);
             vst4_lane_u16(dst + (x+2)*h + y, v_tmp, 2);
             vst4_lane_u16(dst + (x+3)*h + y, v_tmp, 3);
+        }
+    }
+}
+
+/*  
+    NEON optimized matrix transpose inverse
+    (dimensions multiple of 4, 16bits pixels)
+*/
+void fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h){
+    
+    /* Vars */
+    uint16x4x4_t v_tmp;
+    int y, x;
+
+    /* Main loop */
+    for (y=0; y<h; y+=4){
+        for (x=0; x<w; x+=4){
+
+            /* Neon Load */
+            v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
+            v_tmp.val[1] = vld1_u16(src + (y+2)*w + x );
+            v_tmp.val[2] = vld1_u16(src + (y+1)*w + x );
+            v_tmp.val[3] = vld1_u16(src + (y+0)*w + x );
+
+            /* Neon store (4 interleaved) */
+            vst4_lane_u16(dst + ( (w-1) - x - 3 )*h + (h-y-3-1), v_tmp, 3);
+            vst4_lane_u16(dst + ( (w-1) - x - 2 )*h + (h-y-3-1), v_tmp, 2);
+            vst4_lane_u16(dst + ( (w-1) - x - 1 )*h + (h-y-3-1), v_tmp, 1);
+            vst4_lane_u16(dst + ( (w-1) - x - 0 )*h + (h-y-3-1), v_tmp, 0);
+        }
+    }
+}
+
+/*  
+    NEON optimized matrix rotate 90° CW 
+    (dimensions multiple of 4, 16bits pixels)
+*/
+void fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
+    
+    /* Vars */
+    uint16x4x4_t v_tmp;
+    int y, x;
+
+    /* Main loop */
+    for (y=0; y<h; y+=4){
+        for (x=0; x<w; x+=4){
+
+            /* Neon Load */
+            v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
+            v_tmp.val[1] = vld1_u16(src + (y+2)*w + x );
+            v_tmp.val[2] = vld1_u16(src + (y+1)*w + x );
+            v_tmp.val[3] = vld1_u16(src + (y+0)*w + x );
+
+            /* Neon store (4 interleaved) */
+            vst4_lane_u16(dst + (x+0)*h + (h-y-3-1), v_tmp, 0);
+            vst4_lane_u16(dst + (x+1)*h + (h-y-3-1), v_tmp, 1);
+            vst4_lane_u16(dst + (x+2)*h + (h-y-3-1), v_tmp, 2);
+            vst4_lane_u16(dst + (x+3)*h + (h-y-3-1), v_tmp, 3);
+        }
+    }
+}
+
+/*  
+    NEON optimized matrix rotate 270° CW
+    (dimensions multiple of 4, 16bits pixels)
+*/
+void fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
+    
+    /* Vars */
+    uint16x4x4_t v_tmp;
+    int y, x;
+
+    /* Main loop */
+    for (y=0; y<h; y+=4){
+        for (x=0; x<w; x+=4){
+
+            /* Neon Load */
+            v_tmp.val[0] = vld1_u16(src + (y+0)*w + x );
+            v_tmp.val[1] = vld1_u16(src + (y+1)*w + x );
+            v_tmp.val[2] = vld1_u16(src + (y+2)*w + x );
+            v_tmp.val[3] = vld1_u16(src + (y+3)*w + x );
+
+            /* Neon store (4 interleaved) */
+            vst4_lane_u16(dst + ( (w-1) - x - 3 )*h + y, v_tmp, 3);
+            vst4_lane_u16(dst + ( (w-1) - x - 2 )*h + y, v_tmp, 2);
+            vst4_lane_u16(dst + ( (w-1) - x - 1 )*h + y, v_tmp, 1);
+            vst4_lane_u16(dst + ( (w-1) - x - 0 )*h + y, v_tmp, 0);
         }
     }
 }

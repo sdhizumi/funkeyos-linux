@@ -261,6 +261,11 @@ static int set_var(struct fbtft_par *par)
 
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	switch (par->pdata->rotate_soft) {
+	case 0:
+		break;
+	case 180:
+		// not handled yet
+		break;
 	case 90:
 	case 270:
 		#if 0
@@ -290,6 +295,7 @@ static int set_var(struct fbtft_par *par)
 		#endif
 		break;
 	default:
+		// not handled
 		return -EINVAL;
 	}
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE

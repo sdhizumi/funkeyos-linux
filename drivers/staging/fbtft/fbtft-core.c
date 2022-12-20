@@ -703,6 +703,12 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 	if (par->pdata->rotate_soft){
 		fbtft_vmem_transpose(par, vmem, par->vmem_back_buffers[par->vmem_cur_buf_idx]);
 	}
+	else{
+		if(vmem == par->info->screen_buffer){
+			memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], vmem, par->info->var.yres * par->info->fix.line_length);
+			vmem = par->vmem_back_buffers[par->vmem_cur_buf_idx];
+		}
+	}
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
 	vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_back_buffers[par->vmem_cur_buf_idx]);
 	if(vmem == par->info->screen_buffer){

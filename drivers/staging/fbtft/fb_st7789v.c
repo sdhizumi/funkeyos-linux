@@ -263,7 +263,7 @@ static int set_var(struct fbtft_par *par)
 	switch (par->pdata->rotate_soft) {
 	case 90:
 	case 270:
-		#if 1
+		#if 0
 		//madctl_par |= (MADCTL_MY | MADCTL_ML);
 		//madctl_par |= (MADCTL_MY);
 		//madctl_par |= (MADCTL_ML);
@@ -279,8 +279,14 @@ static int set_var(struct fbtft_par *par)
 		write_reg(par, 0xB2,0x2F,0x2F,0x00,0x33,0x33);	// Back and front porch optims
 
 		#else
-		madctl_par |= (MADCTL_ML);
-		write_reg(par, 0xE4, 0x1E, 0x00, 0x11);	// 240 gate lines, first line is 0 and gate inversion
+
+		madctl_par |= (MADCTL_MY | MADCTL_ML);
+		//madctl_par |= (MADCTL_MY);
+//		write_reg(par, 0xB2,0x1F,0x01,0x00,0x33,0x33);	// Longer back porch, smaller front porch, separate porch control
+		//write_reg(par, 0xE4, 0x1E, 0x00, 0x11);	// 240 gate lines, first line is 0, reversed
+		
+		write_reg(par, 0xE4, 0x27, 0x00, 0x11);	// Gate scan direction 319->0		
+		//write_reg(par, 0xB2,0x01,0x01,0x01,0x33,0x33);	// Longer front porch, smaller back porch, separate porch control
 		#endif
 		break;
 	default:

@@ -22,7 +22,7 @@
 
 
 #define FBTFT_VMEM_BUFS					3
-#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE	// not optimal for 240x240, optimal for 320x240
 
 #define FBTFT_ONBOARD_BACKLIGHT 		2
 #define FBTFT_GPIO_NO_MATCH				0xFFFF
@@ -309,10 +309,7 @@ int fbtft_init_display(struct fbtft_par *par);
 int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
-void fbtft_rotate_soft(u16 *mat, int size, int rotation);
 void fbtft_set_vmem_buf(struct fbtft_par *par);
-u8 * fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, bool direct);
-u8 *fbtft_vmem_rotate(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst);
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);

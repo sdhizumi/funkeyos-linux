@@ -117,11 +117,15 @@ static bool lock = false;
 int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 {
 	// printk("%s\n", __func__);
+
+	/* Exit, not ready yet */
 	if (par->pdata->te_irq_enabled && !par->ready_for_spi_async)
 		return -1;
+
+	/* Received TE interrupt, but still handling previous transfer */
 	if (lock){
 /* Debug TE overflows */
-#define TE_OVERFLOW_DEBUG
+//#define TE_OVERFLOW_DEBUG
 #ifdef TE_OVERFLOW_DEBUG
 		static ktime_t ts_lock_disp_last_time;
 		static int lock_cnt = 0;
@@ -200,14 +204,17 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 		#warning force send SPI transfer command
 		par->must_send_data_transfer_cmd = true;
 #endif
+		/* Force write full screen */
+		write_line_start = 0;
+		write_line_end = par->info->var.yres - 1;
 
+		/* Send first CMD to start data transfers */
 		if(par->must_send_data_transfer_cmd){
 			par->must_send_data_transfer_cmd = false;
 			par->length_data_transfer = par->info->var.yres * par->info->fix.line_length;
-			write_line_start = 0;
-			write_line_end = par->info->var.yres - 1;
 			fbtft_write_init_cmd_data_transfers(par);
 		}
+		/* Send data */
 		else{
 			fbtft_write_vmem16_bus8_async(par, 
 				write_line_start * par->info->fix.line_length, 

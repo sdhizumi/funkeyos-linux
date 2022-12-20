@@ -41,7 +41,7 @@
     NEON optimized matrix transpose 
     (dimensions multiple of 4, 16bits pixels)
 */
-void fbtft_transpose_neon(uint16_t* src, uint16_t* dst, int w, int h){
+u16* fbtft_transpose_neon(u16* src, u16* dst, int w, int h){
     
     /* Vars */
     uint16x4x4_t v_tmp;
@@ -64,13 +64,15 @@ void fbtft_transpose_neon(uint16_t* src, uint16_t* dst, int w, int h){
             vst4_lane_u16(dst + (x+3)*h + y, v_tmp, 3);
         }
     }
+
+    return dst;
 }
 
 /*  
     NEON optimized matrix transpose inverse
     (dimensions multiple of 4, 16bits pixels)
 */
-void fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h){
+u16* fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h){
     
     /* Vars */
     uint16x4x4_t v_tmp;
@@ -93,13 +95,15 @@ void fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h){
             vst4_lane_u16(dst + ( (w-1) - x - 0 )*h + (h-y-3-1), v_tmp, 0);
         }
     }
+
+    return dst;
 }
 
 /*  
     NEON optimized matrix rotate 90° CW 
     (dimensions multiple of 4, 16bits pixels)
 */
-void fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
+u16* fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
     
     /* Vars */
     uint16x4x4_t v_tmp;
@@ -122,13 +126,15 @@ void fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
             vst4_lane_u16(dst + (x+3)*h + (h-y-3-1), v_tmp, 3);
         }
     }
+
+    return dst;
 }
 
 /*  
     NEON optimized matrix rotate 270° CW
     (dimensions multiple of 4, 16bits pixels)
 */
-void fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
+u16* fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
     
     /* Vars */
     uint16x4x4_t v_tmp;
@@ -151,4 +157,6 @@ void fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
             vst4_lane_u16(dst + ( (w-1) - x - 0 )*h + y, v_tmp, 0);
         }
     }
+
+    return dst;
 }

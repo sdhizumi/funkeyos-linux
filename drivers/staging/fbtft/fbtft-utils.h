@@ -12,33 +12,41 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __LINUX_FBTFT_UTILS_NEON_H
-#define __LINUX_FBTFT_UTILS_NEON_H
+#ifndef __LINUX_FBTFT_UTILS_H
+#define __LINUX_FBTFT_UTILS_H
 
 #include <linux/types.h>
 
-/* 	
-	NEON optimized matrix transpose 
- 	(dimensions multiple of 4, 16bits pixels)
+
+/* 
+Soft Matrix Rotation with only 1 pixel of extra RAM needed
+Works only on 2D square matrices
+Great CPU performance
 */
-u16* fbtft_transpose_neon(u16* src, u16* dst, int w, int h);
+void fbtft_rotate_soft(u16 *mat, int size, int rotation);
 
 /*  
-    NEON optimized matrix transpose inverse
+    Soft matrix transpose  
     (dimensions multiple of 4, 16bits pixels)
 */
-u16* fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h);
+u8* fbtft_transpose_soft(u8* vmem_src, u8* vmem_dst, int w, int h);
 
 /*  
-    NEON optimized matrix rotate 90° CW 
+    Soft inverse transpose
     (dimensions multiple of 4, 16bits pixels)
 */
-u16* fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h);
+u8* fbtft_transpose_inv_soft(u8* vmem_src, u8* vmem_dst, int w, int h);
 
 /*  
-    NEON optimized matrix rotate 270° CW
+    Soft matrix rotate 90° CW 
     (dimensions multiple of 4, 16bits pixels)
 */
-u16* fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h);
+u8* fbtft_rotate_90cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h);
 
-#endif //__LINUX_FBTFT_UTILS_NEON_H
+/*  
+    Soft matrix rotate 270° CW
+    (dimensions multiple of 4, 16bits pixels)
+*/
+u8* fbtft_rotate_270cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h);
+
+#endif //__LINUX_FBTFT_UTILS_H

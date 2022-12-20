@@ -21,20 +21,20 @@
 #include <linux/platform_device.h>
 
 
-#define FBTFT_VMEM_BUFS					3
-#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE	// not optimal for 240x240, optimal for 320x240
+#define FBTFT_VMEM_BUFS						3
+//#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 
-#define FBTFT_ONBOARD_BACKLIGHT 		2
-#define FBTFT_GPIO_NO_MATCH				0xFFFF
-#define FBTFT_GPIO_NAME_SIZE			32
-#define FBTFT_MAX_INIT_SEQUENCE      	512
-#define FBTFT_GAMMA_MAX_VALUES_TOTAL 	128
-#define FBTFT_OVERLAY_NB_VALUES			4
+#define FBTFT_ONBOARD_BACKLIGHT 			2
+#define FBTFT_GPIO_NO_MATCH					0xFFFF
+#define FBTFT_GPIO_NAME_SIZE				32
+#define FBTFT_MAX_INIT_SEQUENCE      		512
+#define FBTFT_GAMMA_MAX_VALUES_TOTAL 		128
+#define FBTFT_OVERLAY_NB_VALUES				4
 
-#define FBTFT_NOTIF_MAX_SIZE			400
+#define FBTFT_NOTIF_MAX_SIZE				400
 
-#define FBTFT_OF_INIT_CMD				BIT(24)
-#define FBTFT_OF_INIT_DELAY				BIT(25)
+#define FBTFT_OF_INIT_CMD					BIT(24)
+#define FBTFT_OF_INIT_DELAY					BIT(25)
 
 /**
  * struct fbtft_gpio - Structure that holds one pinname to gpio mapping
@@ -228,7 +228,6 @@ struct fbtft_par {
 	u8 *buf;
 	u8 *vmem_ptr;
 	u8 *vmem_postprocess_cpy;
-	u8 *vmem_rotation;
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS];
 	u8 vmem_last_full_buf_idx;
 	u8 vmem_cur_buf_idx;

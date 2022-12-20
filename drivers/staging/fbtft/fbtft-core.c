@@ -53,6 +53,7 @@
 #endif
 #include <asm/neon.h>
 #include "fbtft-utils_neon.h"
+#include "fbtft-utils.h"
 
 static unsigned long debug;
 module_param(debug, ulong, 0000);
@@ -439,23 +440,23 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 		else if (par->pdata->rotate == 180)
 			par->fbtftops.set_addr_win(par, 0, 80,
 				par->info->var.xres - 1, 320 - 1);
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
+/* #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
 		else if (par->pdata->rotate_soft == 270){
 			#if 0				
 			const u16 y_offset = 7; //pixels (because first scanline is at idx 240 instead of 239)
 			par->fbtftops.set_addr_win(par, start_line, y_offset,
 				end_line, y_offset+240-1);
 			#else
-			/*par->fbtftops.set_addr_win(par, start_line, 80,
-				end_line, 320-1);*/
+			//par->fbtftops.set_addr_win(par, start_line, 80, end_line, 320-1);*
 			par->fbtftops.set_addr_win(par, 0, 0,
 				par->info->var.xres - 1, 320 - 80 - 1);
 			#endif
 		}
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
-		else
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE	 */			
+		else{
 			par->fbtftops.set_addr_win(par, 0, start_line,
 				par->info->var.xres - 1, end_line);
+		}
 	}
 
 	/* Send cmd to start transfer */
@@ -592,134 +593,65 @@ static u8 *fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
 	return vmem_dst;
 }
 
-/* Soft Matrix Rotation with only 1 pixel of extra RAM needed
-Works only on 2D square matrices */
-static void fbtft_rotate_soft(u16 *mat, int size, int rotation)
-{
-	int i, j;
-	u16 temp;
-	int N = size;
 
-#define AT(i, j) 	((i) * N + (j))
-
-	if (rotation == 90) {
-		/* Rotate screen 90° Clockwise */
-		for (i = 0; i < N / 2; i++) {
-			for (j = i; j < N - i - 1; j++) {
-				temp = mat[AT(i, j)];
-				mat[AT(i, j)] = mat[AT(N - 1 - j, i)];
-				mat[AT(N - 1 - j, i)] = mat[AT(N - 1 - i, N - 1 - j)];
-				mat[AT(N - 1 - i, N - 1 - j)] = mat[AT(j, N - 1 - i)];
-				mat[AT(j, N - 1 - i)] = temp;
-			}
-		}
-	} else if (rotation == 270) {
-		/* Rotate screen 270° Clockwise */
-		for (i = 0; i < N / 2; i++) {
-			for (j = i; j < N - i - 1; j++) {
-				temp = mat[AT(i, j)];
-				mat[AT(i, j)] = mat[AT(j, N - 1 - i)];
-				mat[AT(j, N-1-i)] = mat[AT(N - 1 - i, N - 1 - j)];
-				mat[AT(N - 1 - i, N - 1 - j)] = mat[AT(N - 1 - j, i)];
-				mat[AT(N - 1 - j, i)] = temp;
-			}
-		}
-	}
-}
-
-/* Square rotate (best performace RAM and CPU - only for square matrices) */
-/*	Self contained buffer, no need for vmem_rotation */
-static u8 *fbtft_vmem_rotate(struct fbtft_par *par, u8* vmem)
-{
-	/* Vars */
-//#define DEBUG_ROTATE_TIME
-#ifdef DEBUG_ROTATE_TIME
-	ktime_t ts_now = ktime_get();
-#endif //DEBUG_ROTATE_TIME
-
-	fbtft_rotate_soft((u16*)vmem, par->info->var.yres, par->pdata->rotate_soft);
-	
-#ifdef DEBUG_ROTATE_TIME
-	printk("rot: %ld\n", ktime_to_ns(ktime_sub(ktime_get(), ts_now)) );
-	ts_now = ktime_get();
-#endif //DEBUG_ROTATE_TIME
-
-	return vmem;
-}
-
-/* Transpose 2D u16 matrices */
-static u8 *fbtft_vmem_transpose(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
-{
-	/* Vars */
-//#define DEBUG_ROTATE_TIME
-#ifdef DEBUG_ROTATE_TIME
-	ktime_t ts_now = ktime_get();
-#endif //DEBUG_ROTATE_TIME
-
-	/* Interrupt context ? */
-	//printk("%s called %s interrupt\n", __func__, in_interrupt()?"from":"outside of");
-
-	/* NEON optimized transpose */
-	// Not working in interrupt contexts (trap)
-	if(!in_interrupt()){
-		preempt_disable();
-		kernel_neon_begin();
-		fbtft_transpose_neon((u16*) vmem_src, (u16*) vmem_dst, 
-			par->info->var.xres, par->info->var.yres);
-		kernel_neon_end();
-		preempt_enable();
-	}
-	// Slower software translate for interrupt contexts
-	else{	
-		int x, y;
-		u16 *s = (u16*) vmem_src; 
-		u16 *d = (u16*) vmem_dst; 
-		for (y=0; y<par->info->var.yres; y++){
-			for (x=0; x<par->info->var.xres; x++){
-				d[x*par->info->var.yres + y] = s[y*par->info->var.xres+x];
-			}
-		}
-	}
-	
-#ifdef DEBUG_ROTATE_TIME
-	printk("trans: %ld\n", ktime_to_ns(ktime_sub(ktime_get(), ts_now)) );
-	//ts_now = ktime_get();
-#endif //DEBUG_ROTATE_TIME
-
-	return vmem_dst;
-}
-
-/* Copy framebuffer memory in current back buffer, then
-change current back buffer 
-Used by FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
-FB_FlipHWSurface */
+/* 
+Copy framebuffer memory in current back buffer, then
+change current back buffer idx.
+Used by FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface)
+*/
 static void fbtft_flip_backbuffer(struct fbtft_par *par)
 {
 	/* Vars */
 	u8 *vmem;
 
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	/* Add HID */
 	vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_postprocess_cpy);
-	if (par->pdata->rotate_soft){
-		fbtft_vmem_transpose(par, vmem, par->vmem_back_buffers[par->vmem_cur_buf_idx]);
-	}
-	else{
-		if(vmem == par->info->screen_buffer){
-			memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], vmem, par->info->var.yres * par->info->fix.line_length);
-			vmem = par->vmem_back_buffers[par->vmem_cur_buf_idx];
-		}
-	}
+	
+	/* Rotate and copy to backbuffer */
+	if (par->pdata->rotate_soft == 270){
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+		preempt_disable();
+		kernel_neon_begin();
+		fbtft_transpose_inv_neon((u16*) vmem, 
+			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-	vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_back_buffers[par->vmem_cur_buf_idx]);
-	if(vmem == par->info->screen_buffer){
+		preempt_disable();
+		kernel_neon_begin();
+		fbtft_rotate_270cw_neon((u16*) vmem, 
+			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	}
+	else if (par->pdata->rotate_soft == 90){
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+		preempt_disable();
+		kernel_neon_begin();
+		fbtft_transpose_neon((u16*) vmem, 
+			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
+#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
+		preempt_disable();
+		kernel_neon_begin();
+		fbtft_rotate_90cw_neon((u16*) vmem, 
+			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	}
+	/* No rotation: direct copy to current backbuffer */
+	else{
 		memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], 
 			vmem, par->info->var.yres * par->info->fix.line_length);
 		vmem = par->vmem_back_buffers[par->vmem_cur_buf_idx];
 	}
-	if (par->pdata->rotate_soft){
-		fbtft_vmem_rotate(par, vmem);
-	}
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 
 	/* Update backbuffers idx */
 	par->vmem_last_full_buf_idx = par->vmem_cur_buf_idx;
@@ -732,12 +664,11 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 
 	
 /* Get last memory buffer transferred (full or partial) */
-/* 
+/*
 This could be handled using a double mmapped buffer (or triple) 
 pointed by par->info->screen_buffer. The buffer pointed
 (the one being written) should change using the
-FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in
-FB_FlipHWSurface). 
+FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface). 
 */
 void fbtft_set_vmem_buf(struct fbtft_par *par){
 
@@ -748,41 +679,45 @@ void fbtft_set_vmem_buf(struct fbtft_par *par){
 		par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
 	}
 	// In case screen is not driven by FBIOPAN_DISPLAY ioctl, draw directly the framebuffer
-	else{ 
+	else{
 		//printk("0\n");
 
-		/* Post process screen for double buf copy, notifs, rotation soft... */
+		/* Print HID */
 		par->vmem_ptr = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_postprocess_cpy);
 
-		/* Screen rotation */
+		/* Rotate and copy to unused backbuffer */
+		if (par->pdata->rotate_soft == 270){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-		if (par->pdata->rotate_soft){
-			fbtft_vmem_transpose(par, par->vmem_ptr, par->vmem_back_buffers[par->vmem_last_full_buf_idx]);
+			fbtft_transpose_inv_soft(par->vmem_ptr, 
+				par->vmem_back_buffers[par->vmem_last_full_buf_idx], 
+				par->info->var.xres, par->info->var.yres);
 			par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
-		}
-		else{
-			if(par->vmem_ptr == par->info->screen_buffer){
-				memcpy(par->vmem_postprocess_cpy, par->vmem_ptr, par->info->var.yres * par->info->fix.line_length);
-				par->vmem_ptr = par->vmem_postprocess_cpy;
-			}
-		}
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-		if(par->vmem_ptr == par->info->screen_buffer){
-			memcpy(par->vmem_postprocess_cpy, par->vmem_ptr, par->info->var.yres * par->info->fix.line_length);
-			par->vmem_ptr = par->vmem_postprocess_cpy;
-		}
-		if(par->pdata->rotate_soft){
-			fbtft_vmem_rotate(par, par->vmem_ptr);
-		}
+			fbtft_rotate_270cw_soft(par->vmem_ptr, 
+				par->vmem_back_buffers[par->vmem_last_full_buf_idx],
+				par->info->var.xres, par->info->var.yres);
+			par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-
+		}
+		else if (par->pdata->rotate_soft == 90){
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+			fbtft_transpose_soft(par->vmem_ptr, 
+				par->vmem_back_buffers[par->vmem_last_full_buf_idx], 
+				par->info->var.xres, par->info->var.yres);
+			par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
+#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
+			fbtft_rotate_90cw_soft(par->vmem_ptr, 
+				par->vmem_back_buffers[par->vmem_last_full_buf_idx],
+				par->info->var.xres, par->info->var.yres);
+			par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+		}
 	}
 	
 	//Bypass:
 	//par->vmem_ptr = par->info->screen_buffer;
-
-
-	/* Controlled delay for tests */
+	
+	/* Controlled delay for tearing line tests */
 //#define DELAY_NOP	5500000
 #ifdef DELAY_NOP
 	int i;
@@ -1205,7 +1140,6 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	u8 *vmem = NULL;
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS] = {NULL};
 	u8 *vmem_postprocess_cpy = NULL;
-	u8 *vmem_rotation = NULL;
 	void *txbuf = NULL;
 	void *buf = NULL;
 	unsigned int width;
@@ -1278,6 +1212,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
 	{
 		vmem_back_buffers[i] = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
+		//vmem_back_buffers[i] = vzalloc(vmem_size);
 		if (!vmem_back_buffers[i])
 			goto alloc_fail;
 	}
@@ -1286,11 +1221,6 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	//vmem_postprocess_cpy = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
 	//vmem_postprocess_cpy = vzalloc(vmem_size);
 	if (!vmem_postprocess_cpy)
-		goto alloc_fail;
-	
-
-	vmem_rotation = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
-	if (!vmem_rotation)
 		goto alloc_fail;
 
 	fbops = devm_kzalloc(dev, sizeof(struct fb_ops), GFP_KERNEL);
@@ -1379,7 +1309,6 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		par->vmem_back_buffers[i] = vmem_back_buffers[i];
 	}
 	par->vmem_postprocess_cpy = vmem_postprocess_cpy;
-	par->vmem_rotation = vmem_rotation;
 	par->vmem_last_full_buf_idx = 0;
 	par->vmem_cur_buf_idx = 0;
 	par->vmem_ptr = par->info->screen_buffer + (par->vmem_cur_buf_idx*par->vmem_size);
@@ -2085,18 +2014,12 @@ int fbtft_probe_common(struct fbtft_display *display,
 		(time when display is not reading GRAM)
 		but falling is better in practice since it gives 
 		some delay that hides the tearing line */
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 		/*err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
 				IRQF_SHARED | IRQF_TRIGGER_RISING,
 	            "TE", par->pdata);*/
 		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
 				IRQF_SHARED | IRQF_TRIGGER_FALLING,
 	            "TE", par->pdata);
-#else //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
-				IRQF_SHARED | IRQF_TRIGGER_FALLING,
-	            "TE", par->pdata);
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 		if (err < 0) {
 			dev_err(dev,"ERROR initializing TE signal irq\n");
 			par->pdata->te_irq_enabled = false;

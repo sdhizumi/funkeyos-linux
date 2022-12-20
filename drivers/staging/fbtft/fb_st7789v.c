@@ -259,46 +259,21 @@ static int set_var(struct fbtft_par *par)
 		return -EINVAL;
 	}
 
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	switch (par->pdata->rotate_soft) {
 	case 0:
-		break;
 	case 180:
-		// not handled yet
 		break;
 	case 90:
 	case 270:
-		#if 0
-		//madctl_par |= (MADCTL_MY | MADCTL_ML);
-		//madctl_par |= (MADCTL_MY);
-		//madctl_par |= (MADCTL_ML);
-		//write_reg(par, 0xE4, 0x1E, 0x00, 0x10);	// 240 gate lines, first line is 0
-		//write_reg(par, 0xE4, 0x1E, 0x0A, 0x10);	// 240 gate lines, first line is 80
-		//write_reg(par, 0xE4, 0x1E, 0x0A, 0x11);	// 240 gate lines, first line is 80 and gate inversion -> good also for 270 rot soft and transpose, no my/no ml, no window set but 1st gate starts at 80 instead of 79 (one line missing)
-		write_reg(par, 0xE4, 0x1E, 0x09, 0x11);	// 240 gate lines, first line is 80 and gate inversion -> good also for 270 rot soft and transpose, no my/no ml, no window set but 1st gate starts at 80 instead of 79 (one line missing)
-		//write_reg(par, 0xE4, 0x1E, 0x00, 0x11);	// 240 gate lines, first line is 0 and gate inversion
-		//write_reg(par, 0xE4, 0x1E, 0x15, 0x11);	// 240 gate lines, first line is 120 and gate inversion
-		//write_reg(par, 0xE4, 0x1E, 0x0A, 0x11);	// 240 gate lines, first line is 80 and gate inversion
-
-		
-		write_reg(par, 0xB2,0x2F,0x2F,0x00,0x33,0x33);	// Back and front porch optims
-
-		#else
-
-		madctl_par |= (MADCTL_MY | MADCTL_ML);
-		//madctl_par |= (MADCTL_MY);
-//		write_reg(par, 0xB2,0x1F,0x01,0x00,0x33,0x33);	// Longer back porch, smaller front porch, separate porch control
-		//write_reg(par, 0xE4, 0x1E, 0x00, 0x11);	// 240 gate lines, first line is 0, reversed
-		
-		write_reg(par, 0xE4, 0x27, 0x00, 0x11);	// Gate scan direction 319->0		
-		//write_reg(par, 0xB2,0x01,0x01,0x01,0x33,0x33);	// Longer front porch, smaller back porch, separate porch control
-		#endif
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+		madctl_par |= (MADCTL_MY | MADCTL_MX | MADCTL_ML | MADCTL_MH);		
+		write_reg(par, 0xE4, 0x27, 0x00, 0x11);	// Gate scan direction 319->0
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 		break;
 	default:
 		// not handled
 		return -EINVAL;
 	}
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 
 	write_reg(par, MIPI_DCS_SET_ADDRESS_MODE, madctl_par);
 

@@ -51,6 +51,12 @@ u16* fbtft_transpose_neon(u16* src, u16* dst, int w, int h){
     for (y=0; y<h; y+=4){
         for (x=0; x<w; x+=4){
 
+            /* 1% CPU gain */
+            __builtin_prefetch(src + (y+0)*w + x + 4);
+            __builtin_prefetch(src + (y+1)*w + x + 4);
+            __builtin_prefetch(src + (y+2)*w + x + 4);
+            __builtin_prefetch(src + (y+3)*w + x + 4);
+
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+0)*w + x );
             v_tmp.val[1] = vld1_u16(src + (y+1)*w + x );
@@ -81,6 +87,12 @@ u16* fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h){
     /* Main loop */
     for (y=0; y<h; y+=4){
         for (x=0; x<w; x+=4){
+
+            /* 1% CPU gain */
+            __builtin_prefetch(src + (y+0)*w + x + 4);
+            __builtin_prefetch(src + (y+1)*w + x + 4);
+            __builtin_prefetch(src + (y+2)*w + x + 4);
+            __builtin_prefetch(src + (y+3)*w + x + 4);
 
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
@@ -113,6 +125,12 @@ u16* fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
     for (y=0; y<h; y+=4){
         for (x=0; x<w; x+=4){
 
+            /* 1% CPU gain */
+            __builtin_prefetch(src + (y+0)*w + x + 4);
+            __builtin_prefetch(src + (y+1)*w + x + 4);
+            __builtin_prefetch(src + (y+2)*w + x + 4);
+            __builtin_prefetch(src + (y+3)*w + x + 4);
+
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
             v_tmp.val[1] = vld1_u16(src + (y+2)*w + x );
@@ -143,6 +161,12 @@ u16* fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
     /* Main loop */
     for (y=0; y<h; y+=4){
         for (x=0; x<w; x+=4){
+
+            /* 1% CPU gain */
+            __builtin_prefetch(src + (y+0)*w + x + 4);
+            __builtin_prefetch(src + (y+1)*w + x + 4);
+            __builtin_prefetch(src + (y+2)*w + x + 4);
+            __builtin_prefetch(src + (y+3)*w + x + 4);
 
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+0)*w + x );

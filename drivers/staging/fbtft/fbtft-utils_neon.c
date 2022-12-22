@@ -37,7 +37,7 @@
 #include "fbtft-utils_neon.h"
 #include <arm_neon.h>
 
-#define PREFETCH_ORDER_X    32
+#define PREFETCH_ORDER_X    8 //=> 8*16Bytes = 4*32 bytes (32 is the cache line size in ARMV7-A)
 #define PREFETCH_ORDER_Y    4
 
 /*  
@@ -146,7 +146,7 @@ u16* fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
         __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+1)*w + x);
         __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+2)*w + x);
         __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+3)*w + x);
-        
+
         for (x=0; x<w; x+=4){
 
             /* Prefetch src */

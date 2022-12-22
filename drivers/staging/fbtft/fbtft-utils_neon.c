@@ -37,6 +37,9 @@
 #include "fbtft-utils_neon.h"
 #include <arm_neon.h>
 
+#define PREFETCH_ORDER_X    32
+#define PREFETCH_ORDER_Y    4
+
 /*  
     NEON optimized matrix transpose 
     (dimensions multiple of 4, 16bits pixels)
@@ -49,13 +52,20 @@ u16* fbtft_transpose_neon(u16* src, u16* dst, int w, int h){
 
     /* Main loop */
     for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+0)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+1)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+2)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+3)*w + x);
+        
         for (x=0; x<w; x+=4){
 
-            /* 1% CPU gain */
-            __builtin_prefetch(src + (y+0)*w + x + 4);
-            __builtin_prefetch(src + (y+1)*w + x + 4);
-            __builtin_prefetch(src + (y+2)*w + x + 4);
-            __builtin_prefetch(src + (y+3)*w + x + 4);
+            /* Prefetch src */
+            __builtin_prefetch(src + (y+0)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+1)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+2)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+3)*w + x + PREFETCH_ORDER_X);
 
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+0)*w + x );
@@ -86,13 +96,20 @@ u16* fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h){
 
     /* Main loop */
     for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+0)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+1)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+2)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+3)*w + x);
+        
         for (x=0; x<w; x+=4){
 
-            /* 1% CPU gain */
-            __builtin_prefetch(src + (y+0)*w + x + 4);
-            __builtin_prefetch(src + (y+1)*w + x + 4);
-            __builtin_prefetch(src + (y+2)*w + x + 4);
-            __builtin_prefetch(src + (y+3)*w + x + 4);
+            /* Prefetch src */
+            __builtin_prefetch(src + (y+0)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+1)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+2)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+3)*w + x + PREFETCH_ORDER_X);
 
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
@@ -123,13 +140,20 @@ u16* fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
 
     /* Main loop */
     for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+0)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+1)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+2)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+3)*w + x);
+        
         for (x=0; x<w; x+=4){
 
-            /* 1% CPU gain */
-            __builtin_prefetch(src + (y+0)*w + x + 4);
-            __builtin_prefetch(src + (y+1)*w + x + 4);
-            __builtin_prefetch(src + (y+2)*w + x + 4);
-            __builtin_prefetch(src + (y+3)*w + x + 4);
+            /* Prefetch src */
+            __builtin_prefetch(src + (y+0)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+1)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+2)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+3)*w + x + PREFETCH_ORDER_X);
 
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
@@ -160,13 +184,20 @@ u16* fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
 
     /* Main loop */
     for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+0)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+1)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+2)*w + x);
+        __builtin_prefetch(src + (y+PREFETCH_ORDER_Y+3)*w + x);
+
         for (x=0; x<w; x+=4){
 
-            /* 1% CPU gain */
-            __builtin_prefetch(src + (y+0)*w + x + 4);
-            __builtin_prefetch(src + (y+1)*w + x + 4);
-            __builtin_prefetch(src + (y+2)*w + x + 4);
-            __builtin_prefetch(src + (y+3)*w + x + 4);
+            /* Prefetch src */
+            __builtin_prefetch(src + (y+0)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+1)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+2)*w + x + PREFETCH_ORDER_X);
+            __builtin_prefetch(src + (y+3)*w + x + PREFETCH_ORDER_X);
 
             /* Neon Load */
             v_tmp.val[0] = vld1_u16(src + (y+0)*w + x );

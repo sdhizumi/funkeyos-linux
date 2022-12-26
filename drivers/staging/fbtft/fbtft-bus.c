@@ -244,8 +244,7 @@ int fbtft_write_cmd_window_line(struct fbtft_par *par){
 	//printk("%s\n", __func__);
 
 	/* Resetting to 0 for incoming cmd init data write */
-	if (gpio_is_valid(par->gpio.dc))
-		gpio_set_value(par->gpio.dc, 0);
+	set_dc(par, 0);
 
 	/* Start sending cmd init data */
 	ret = par->fbtftops.write_async(par, &cmd_window_line, 1, spi_complete_cmd_window_line);
@@ -280,8 +279,7 @@ int fbtft_write_data_window_line(struct fbtft_par *par)
 	//printk("%s, buf[0] = %d, buf[1] = %d, buf[2] = %d, buf[3] = %d\n", __func__, buf[0], buf[1], buf[2], buf[3]);
 
 	/* Resetting to 1 for incoming data */
-	if (gpio_is_valid(par->gpio.dc))
-		gpio_set_value(par->gpio.dc, 1);
+	set_dc(par, 1);
 
 	/* Start sending window_line data */
 	ret = par->fbtftops.write_async(par, buf_ylim, 4, spi_complete_data_window_line);
@@ -309,8 +307,7 @@ int fbtft_write_init_cmd_data_transfers(struct fbtft_par *par)
 	// printk("%s\n", __func__);
 
 	/* Resetting to 0 for incoming cmd: "init data write" */
-	if (gpio_is_valid(par->gpio.dc))
-		gpio_set_value(par->gpio.dc, 0);
+	set_dc(par, 0);
 
 	/* Start sending cmd init data */
 	ret = par->fbtftops.write_async(par, (u8 *) &init_data_cmd_buf, 1,
@@ -370,8 +367,7 @@ int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t l
 		__func__, offset, len);
 
 	/* DC pin = 1  for data transfers */
-	if (par->gpio.dc != -1)
-		gpio_set_value(par->gpio.dc, 1);
+	set_dc(par, 1);
 
 	/* FORCED non buffered write here */
 	/* since there is only one SPI */
@@ -405,8 +401,7 @@ int fbtft_write_vmem16_bus8(struct fbtft_par *par, size_t offset, size_t len)
 	remain = len / 2;
 	vmem16 = (u16 *)(par->vmem_ptr + offset);
 
-	if (par->gpio.dc != -1)
-		gpio_set_value(par->gpio.dc, 1);
+	set_dc(par, 1);
 
 	/* non buffered write */
 	if (!par->txbuf.buf)

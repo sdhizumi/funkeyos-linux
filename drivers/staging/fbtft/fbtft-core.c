@@ -63,8 +63,7 @@ int fbtft_write_buf_dc(struct fbtft_par *par, void *buf, size_t len, int dc)
 {
 	int ret;
 
-	if (gpio_is_valid(par->gpio.dc))
-		gpio_set_value(par->gpio.dc, dc);
+	set_dc(par, dc);
 
 	ret = par->fbtftops.write(par, buf, len);
 	if (ret < 0)
@@ -610,6 +609,7 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 	/* Rotate and copy to backbuffer */
 	if (par->pdata->rotate_soft == 270){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	#ifdef FBTFT_NEON_OPTIMS
 		preempt_disable();
 		kernel_neon_begin();
 		fbtft_transpose_inv_neon((u16*) vmem, 
@@ -617,7 +617,13 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 			par->info->var.xres, par->info->var.yres);
 		kernel_neon_end();
 		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+		fbtft_transpose_inv_soft( vmem, 
+			par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+	#endif //FBTFT_NEON_OPTIMS
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
+	#ifdef FBTFT_NEON_OPTIMS
 		preempt_disable();
 		kernel_neon_begin();
 		fbtft_rotate_270cw_neon((u16*) vmem, 
@@ -625,10 +631,16 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 			par->info->var.xres, par->info->var.yres);
 		kernel_neon_end();
 		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+		fbtft_rotate_270cw_soft( vmem, 
+			par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+	#endif //FBTFT_NEON_OPTIMS
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
 	else if (par->pdata->rotate_soft == 90){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	#ifdef FBTFT_NEON_OPTIMS
 		preempt_disable();
 		kernel_neon_begin();
 		fbtft_transpose_neon((u16*) vmem, 
@@ -636,7 +648,13 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 			par->info->var.xres, par->info->var.yres);
 		kernel_neon_end();
 		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+		fbtft_transpose_soft( vmem, 
+			par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+	#endif //FBTFT_NEON_OPTIMS
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
+	#ifdef FBTFT_NEON_OPTIMS
 		preempt_disable();
 		kernel_neon_begin();
 		fbtft_rotate_90cw_neon((u16*) vmem, 
@@ -644,6 +662,11 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 			par->info->var.xres, par->info->var.yres);
 		kernel_neon_end();
 		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+		fbtft_rotate_90cw_soft( vmem, 
+			par->vmem_back_buffers[par->vmem_cur_buf_idx],
+			par->info->var.xres, par->info->var.yres);
+	#endif //FBTFT_NEON_OPTIMS
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
 	/* No rotation: direct copy to current backbuffer */
@@ -1208,10 +1231,13 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	}
 
 	vmem_size = display->width * display->height * bpp / 8;
+	//vmem = devm_kzalloc(dev, vmem_size, GFP_KERNEL); // TRAP. Managed kzalloc. Memory allocated with this function is automatically freed on driver detach
+	//vmem = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
 	vmem = vzalloc(vmem_size);
 	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
 	{
 		vmem_back_buffers[i] = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
+		//vmem_back_buffers[i] = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
 		//vmem_back_buffers[i] = vzalloc(vmem_size);
 		if (!vmem_back_buffers[i])
 			goto alloc_fail;
@@ -1370,6 +1396,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		par->gpio.led[i] = -1;
 		par->gpio.aux[i] = -1;
 	}
+	par->dc_last_value = -1;
 
 	/* default fbtft operations */
 	par->fbtftops.write = fbtft_write_spi;

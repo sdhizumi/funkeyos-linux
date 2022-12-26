@@ -37,7 +37,228 @@
 #include "fbtft-utils_neon.h"
 #include <arm_neon.h>
 
-#define PREFETCH_ORDER_X    8 //=> 8*16Bytes = 4*32 bytes (32 is the cache line size in ARMV7-A)
+#if 1
+
+#define CACHE_PAGE_SIZE         32  //Bytes
+#define NB_CACHE_PAGES          8
+#define MAX_PRELOAD_DISTANCE    (CACHE_PAGE_SIZE*NB_CACHE_PAGES)
+
+/*  
+    NEON optimized matrix transpose 
+    (dimensions multiple of 4, 16bits pixels)
+*/
+u16* fbtft_transpose_neon(u16* src, u16* dst, int w, int h){
+    
+    /* Vars */
+    const uint8_t stride = 2;
+    uint16x4x4_t v_tmp;
+    int y=0, x=0;
+    uint32_t next_x_prefetch;
+
+    /* Main loop */
+    for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        if( y+4 < h ){
+            __builtin_prefetch(src + (y+4+0)*w);
+            __builtin_prefetch(src + (y+4+1)*w);
+            __builtin_prefetch(src + (y+4+2)*w);
+            __builtin_prefetch(src + (y+4+3)*w);
+        }
+        next_x_prefetch = CACHE_PAGE_SIZE/stride;
+        
+        for (x=0; x<w; x+=4){
+
+            /* Prefetch src */
+            if( (next_x_prefetch-x) <= (MAX_PRELOAD_DISTANCE-CACHE_PAGE_SIZE)/stride/4 &&
+                next_x_prefetch < w ){
+                __builtin_prefetch(src + (y+0)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+1)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+2)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+3)*w + next_x_prefetch);
+                next_x_prefetch += CACHE_PAGE_SIZE/stride;
+            }
+
+            /* Neon Load */
+            v_tmp.val[0] = vld1_u16(src + (y+0)*w + x );
+            v_tmp.val[1] = vld1_u16(src + (y+1)*w + x );
+            v_tmp.val[2] = vld1_u16(src + (y+2)*w + x );
+            v_tmp.val[3] = vld1_u16(src + (y+3)*w + x );
+
+            /* Neon store (4 interleaved) */
+            vst4_lane_u16(dst + (x+0)*h + y, v_tmp, 0);
+            vst4_lane_u16(dst + (x+1)*h + y, v_tmp, 1);
+            vst4_lane_u16(dst + (x+2)*h + y, v_tmp, 2);
+            vst4_lane_u16(dst + (x+3)*h + y, v_tmp, 3);
+        }
+    }
+
+    return dst;
+}
+
+/*  
+    NEON optimized matrix transpose inverse
+    (dimensions multiple of 4, 16bits pixels)
+*/
+u16* fbtft_transpose_inv_neon(u16* src, u16* dst, int w, int h){
+    
+    /* Vars */
+    const uint8_t stride = 2;
+    uint16x4x4_t v_tmp;
+    int y=0, x=0;
+    uint32_t next_x_prefetch;
+
+    /* Main loop */
+    for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        if( y+4 < h ){
+            __builtin_prefetch(src + (y+4+0)*w);
+            __builtin_prefetch(src + (y+4+1)*w);
+            __builtin_prefetch(src + (y+4+2)*w);
+            __builtin_prefetch(src + (y+4+3)*w);
+        }
+        next_x_prefetch = CACHE_PAGE_SIZE/stride;
+        
+        for (x=0; x<w; x+=4){
+
+            /* Prefetch src */
+            if( (next_x_prefetch-x) <= (MAX_PRELOAD_DISTANCE-CACHE_PAGE_SIZE)/stride/4 &&
+                next_x_prefetch < w ){
+                __builtin_prefetch(src + (y+0)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+1)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+2)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+3)*w + next_x_prefetch);
+                next_x_prefetch += CACHE_PAGE_SIZE/stride;
+            }
+
+            /* Neon Load */
+            v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
+            v_tmp.val[1] = vld1_u16(src + (y+2)*w + x );
+            v_tmp.val[2] = vld1_u16(src + (y+1)*w + x );
+            v_tmp.val[3] = vld1_u16(src + (y+0)*w + x );
+
+            /* Neon store (4 interleaved) */
+            vst4_lane_u16(dst + ( (w-1) - x - 3 )*h + (h-y-3-1), v_tmp, 3);
+            vst4_lane_u16(dst + ( (w-1) - x - 2 )*h + (h-y-3-1), v_tmp, 2);
+            vst4_lane_u16(dst + ( (w-1) - x - 1 )*h + (h-y-3-1), v_tmp, 1);
+            vst4_lane_u16(dst + ( (w-1) - x - 0 )*h + (h-y-3-1), v_tmp, 0);
+        }
+    }
+
+    return dst;
+}
+
+/*  
+    NEON optimized matrix rotate 90° CW 
+    (dimensions multiple of 4, 16bits pixels)
+*/
+u16* fbtft_rotate_90cw_neon(u16* src, u16* dst, int w, int h){
+    
+    /* Vars */
+    const uint8_t stride = 2;
+    uint16x4x4_t v_tmp;
+    int y=0, x=0;
+    uint32_t next_x_prefetch;
+
+    /* Main loop */
+    for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        if( y+4 < h ){
+            __builtin_prefetch(src + (y+4+0)*w);
+            __builtin_prefetch(src + (y+4+1)*w);
+            __builtin_prefetch(src + (y+4+2)*w);
+            __builtin_prefetch(src + (y+4+3)*w);
+        }
+        next_x_prefetch = CACHE_PAGE_SIZE/stride;
+
+        for (x=0; x<w; x+=4){
+
+            /* Prefetch src */
+            if( (next_x_prefetch-x) <= (MAX_PRELOAD_DISTANCE-CACHE_PAGE_SIZE)/stride/4 &&
+                next_x_prefetch < w ){
+                __builtin_prefetch(src + (y+0)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+1)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+2)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+3)*w + next_x_prefetch);
+                next_x_prefetch += CACHE_PAGE_SIZE/stride;
+            }
+
+            /* Neon Load */
+            v_tmp.val[0] = vld1_u16(src + (y+3)*w + x );
+            v_tmp.val[1] = vld1_u16(src + (y+2)*w + x );
+            v_tmp.val[2] = vld1_u16(src + (y+1)*w + x );
+            v_tmp.val[3] = vld1_u16(src + (y+0)*w + x );
+
+            /* Neon store (4 interleaved) */
+            vst4_lane_u16(dst + (x+0)*h + (h-y-3-1), v_tmp, 0);
+            vst4_lane_u16(dst + (x+1)*h + (h-y-3-1), v_tmp, 1);
+            vst4_lane_u16(dst + (x+2)*h + (h-y-3-1), v_tmp, 2);
+            vst4_lane_u16(dst + (x+3)*h + (h-y-3-1), v_tmp, 3);
+        }
+    }
+
+    return dst;
+}
+
+/*  
+    NEON optimized matrix rotate 270° CW
+    (dimensions multiple of 4, 16bits pixels)
+*/
+u16* fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
+    
+    /* Vars */
+    const uint8_t stride = 2;
+    uint16x4x4_t v_tmp;
+    int y=0, x=0;
+    uint32_t next_x_prefetch;
+
+
+    /* Main loop */
+    for (y=0; y<h; y+=4){
+
+        /* Prefetch src */
+        if( y+4 < h ){
+            __builtin_prefetch(src + (y+4+0)*w);
+            __builtin_prefetch(src + (y+4+1)*w);
+            __builtin_prefetch(src + (y+4+2)*w);
+            __builtin_prefetch(src + (y+4+3)*w);
+        }
+        next_x_prefetch = CACHE_PAGE_SIZE/stride;
+
+        for (x=0; x<w; x+=4){
+
+            /* Prefetch src */
+            if( (next_x_prefetch-x) <= (MAX_PRELOAD_DISTANCE-CACHE_PAGE_SIZE)/stride/4 &&
+                next_x_prefetch < w ){
+                __builtin_prefetch(src + (y+0)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+1)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+2)*w + next_x_prefetch);
+                __builtin_prefetch(src + (y+3)*w + next_x_prefetch);
+                next_x_prefetch += CACHE_PAGE_SIZE/stride;
+            }
+
+            /* Neon Load */
+            v_tmp.val[0] = vld1_u16(src + (y+0)*w + x );
+            v_tmp.val[1] = vld1_u16(src + (y+1)*w + x );
+            v_tmp.val[2] = vld1_u16(src + (y+2)*w + x );
+            v_tmp.val[3] = vld1_u16(src + (y+3)*w + x );
+
+            /* Neon store (4 interleaved) */
+            vst4_lane_u16(dst + ( (w-1) - x - 3 )*h + y, v_tmp, 3);
+            vst4_lane_u16(dst + ( (w-1) - x - 2 )*h + y, v_tmp, 2);
+            vst4_lane_u16(dst + ( (w-1) - x - 1 )*h + y, v_tmp, 1);
+            vst4_lane_u16(dst + ( (w-1) - x - 0 )*h + y, v_tmp, 0);
+        }
+    }
+
+    return dst;
+}
+
+#else //1
+
+#define PREFETCH_ORDER_X    8 
 #define PREFETCH_ORDER_Y    4
 
 /*  
@@ -215,3 +436,5 @@ u16* fbtft_rotate_270cw_neon(u16* src, u16* dst, int w, int h){
 
     return dst;
 }
+
+#endif

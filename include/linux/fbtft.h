@@ -23,6 +23,7 @@
 
 #define FBTFT_VMEM_BUFS						3
 //#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+#define FBTFT_NEON_OPTIMS
 
 #define FBTFT_ONBOARD_BACKLIGHT 			2
 #define FBTFT_GPIO_NO_MATCH					0xFFFF
@@ -251,6 +252,7 @@ struct fbtft_par {
 		int led[16];
 		int aux[16];
 	} gpio;
+	int dc_last_value;
 	const s16 *init_sequence;
 	struct {
 		struct mutex lock;
@@ -291,6 +293,13 @@ struct fbtft_par {
 
 #define write_reg(par, ...)                                              \
 	par->fbtftops.write_register(par, NUMARGS(__VA_ARGS__), __VA_ARGS__)
+
+#define set_dc(par, v) 							\
+	if(par->dc_last_value != v){				\
+		if (gpio_is_valid(par->gpio.dc))		\
+			gpio_set_value(par->gpio.dc, v);	\
+		par->dc_last_value = v;					\
+	}
 
 /* fbtft-core.c */
 int fbtft_write_buf_dc(struct fbtft_par *par, void *buf, size_t len, int dc);

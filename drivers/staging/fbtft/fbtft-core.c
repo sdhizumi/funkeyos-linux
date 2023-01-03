@@ -438,20 +438,7 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 				320 - 1, end_line);
 		else if (par->pdata->rotate == 180)
 			par->fbtftops.set_addr_win(par, 0, 80,
-				par->info->var.xres - 1, 320 - 1);
-/* #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE				
-		else if (par->pdata->rotate_soft == 270){
-			#if 0				
-			const u16 y_offset = 7; //pixels (because first scanline is at idx 240 instead of 239)
-			par->fbtftops.set_addr_win(par, start_line, y_offset,
-				end_line, y_offset+240-1);
-			#else
-			//par->fbtftops.set_addr_win(par, start_line, 80, end_line, 320-1);*
-			par->fbtftops.set_addr_win(par, 0, 0,
-				par->info->var.xres - 1, 320 - 80 - 1);
-			#endif
-		}
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE	 */			
+				par->info->var.xres - 1, 320 - 1);	
 		else{
 			par->fbtftops.set_addr_win(par, 0, start_line,
 				par->info->var.xres - 1, end_line);
@@ -471,6 +458,7 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 			__func__);
 
 	if (unlikely(timeit)) {
+		static int nb_fps_values = 0;
 		ts_end = ktime_get();
 		if (!ktime_to_ns(par->update_time))
 			par->update_time = ts_start;
@@ -485,14 +473,14 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 
 		if (fps) {
 			par->avg_fps += fps;
-			par->nb_fps_values++;
+			nb_fps_values++;
 
-			if (par->nb_fps_values == 120) {
+			if (nb_fps_values == 120) {
 				dev_info(par->info->device,
 					 "Display update: %ld kB/s, write_time: %ldus, fps=%ld\n",
-					 throughput, write_time, par->avg_fps/par->nb_fps_values);
+					 throughput, write_time, par->avg_fps/nb_fps_values);
 				par->avg_fps = 0;
-				par->nb_fps_values = 0;
+				nb_fps_values = 0;
 			}
 		}
 
@@ -1085,8 +1073,38 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 
 	dev_dbg(info->dev, "%s\n", __func__);
 
-	var->xoffset = 0;
-	var->yoffset = 0;
+
+	/* FPS */
+	static ktime_t ts_earlier = 0;
+	static long ns_between_frames = 0;
+	
+	ktime_t ts_now = ktime_get();
+	par->ns_between_ioctl = ktime_us_delta(ts_now, ts_earlier);
+	ts_earlier = ts_now;
+
+#define IOCTL_FREQ_SECS		FBTFT_FREQ_UPDATE_SECS
+	static ktime_t ts_earlier_fps = 0;
+	static int count = 0;
+	static int ns_between_frames_avg = 0;
+
+	count++;
+	ns_between_frames_avg += (int)ns_between_frames;
+	int delta_ns = (int)ktime_us_delta(ts_now, ts_earlier_fps);
+
+	if( delta_ns > (IOCTL_FREQ_SECS*1000000) && count ){
+		par->freq_ioctl = count*1000000/delta_ns;
+//#define DEBUG_IOCTL_FREQ
+#ifdef DEBUG_IOCTL_FREQ
+		printk("IOCTL triggered %ld/s, avg ms between frames: %ld\n", 
+			par->freq_ioctl, ns_between_frames_avg/1000/count);
+#endif //DEBUG_IOCTL_FREQ
+		ns_between_frames_avg = 0;
+		count = 0;
+		ts_earlier_fps = ts_now;
+	}
+
+
+	/* Process current framebuffer */
 	fbtft_flip_backbuffer(par);
 	
 	return -ENODEV; // forced or SDL segfaults (when flipping surface->pixels buffer. In our case it shoud not be done, we have 1 pixel buffer to save ram)
@@ -1817,21 +1835,24 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 {
     struct fbtft_platform_data *pdata = (struct fbtft_platform_data *) dev_id;
 
-#define DEBUG_TE_IRQ_COUNT
-#ifdef DEBUG_TE_IRQ_COUNT
+    /* Freq */
+#define SECS_TE_IRQ_FREQ	FBTFT_FREQ_UPDATE_SECS
     static ktime_t prev_ts = 0;
     static int te_count = 0;
-    static const int nb_sec = 5;
     te_count++;
-
 	ktime_t ts_now = ktime_get();
-	if(ktime_us_delta(ts_now, prev_ts) > nb_sec*1000000){
-		prev_ts = ts_now;
-		printk("TE irq: %d times/sec\n", te_count/nb_sec);
+	int delta_ns = ktime_us_delta(ts_now, prev_ts);
+	if( delta_ns > SECS_TE_IRQ_FREQ*1000000){
+		pdata->par->freq_te = te_count*1000000/delta_ns;
+//#define DEBUG_TE_IRQ_FREQ
+#ifdef DEBUG_TE_IRQ_FREQ
+		printk("TE irq: %d times/sec\n", pdata->par->freq_te);
+#endif //DEBUG_TE_IRQ_FREQ
 		te_count = 0;
+		prev_ts = ts_now;
 	}
-#endif //DEBUG_TE_IRQ_COUNT
 
+	/* Sanity check: SPI still transfering data */
 	if(!pdata->par->ready_for_spi_async)
 		return IRQ_HANDLED;
 	

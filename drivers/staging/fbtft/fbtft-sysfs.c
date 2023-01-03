@@ -339,7 +339,8 @@ static ssize_t show_rotate_soft(struct device *device,
 }
 
 static struct device_attribute rotate_soft_device_attr =
-	__ATTR(rotate_soft, 0660, show_rotate_soft, store_rotate_soft);
+	//__ATTR(rotate_soft, 0660, show_rotate_soft, store_rotate_soft);
+	__ATTR(rotate_soft, 0440, show_rotate_soft, NULL);
 
 static ssize_t store_notification(struct device *device,
 			   struct device_attribute *attr,
@@ -436,6 +437,42 @@ static ssize_t show_switch_backbuf(struct device *device,
 static struct device_attribute switch_backbuf_device_attr =
 	__ATTR(switch_backbuf, 0660, show_switch_backbuf, store_switch_backbuf);
 
+static ssize_t show_freq_ioctl(struct device *device,
+			  struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", par->freq_ioctl);
+}
+
+static struct device_attribute freq_ioctl_device_attr =
+	__ATTR(freq_ioctl, 0440, show_freq_ioctl, NULL);
+
+static ssize_t show_freq_te(struct device *device,
+			  struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", par->freq_te);
+}
+
+static struct device_attribute freq_te_device_attr =
+	__ATTR(freq_te, 0440, show_freq_te, NULL);
+
+static ssize_t show_freq_dma_transfer(struct device *device,
+			  struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	struct fbtft_par *par = fb_info->par;
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", par->freq_dma_transfers);
+}
+
+static struct device_attribute freq_dma_transfer_device_attr =
+	__ATTR(freq_dma_transfer, 0440, show_freq_dma_transfer, NULL);
+
 void fbtft_expand_debug_value(unsigned long *debug)
 {
 	switch (*debug & 0x7) {
@@ -501,7 +538,10 @@ void fbtft_sysfs_init(struct fbtft_par *par)
 	device_create_file(par->info->dev, &switch_backbuf_device_attr);
 	device_create_file(par->info->dev, &rotate_soft_device_attr);
 	device_create_file(par->info->dev, &notification_device_attr);
-	device_create_file(par->info->dev, &overlay_device_attrs[0]);
+	device_create_file(par->info->dev, &freq_ioctl_device_attr);
+	device_create_file(par->info->dev, &freq_te_device_attr);
+	device_create_file(par->info->dev, &freq_dma_transfer_device_attr);
+	//device_create_file(par->info->dev, &overlay_device_attrs[0]);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_create_file(par->info->dev, &gamma_device_attrs[0]);
 }
@@ -513,7 +553,10 @@ void fbtft_sysfs_exit(struct fbtft_par *par)
 	device_remove_file(par->info->dev, &switch_backbuf_device_attr);
 	device_remove_file(par->info->dev, &rotate_soft_device_attr);
 	device_remove_file(par->info->dev, &notification_device_attr);
-	device_remove_file(par->info->dev, &overlay_device_attrs[0]);
+	device_remove_file(par->info->dev, &freq_ioctl_device_attr);
+	device_remove_file(par->info->dev, &freq_te_device_attr);
+	device_remove_file(par->info->dev, &freq_dma_transfer_device_attr);
+	//device_remove_file(par->info->dev, &overlay_device_attrs[0]);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_remove_file(par->info->dev, &gamma_device_attrs[0]);
 }

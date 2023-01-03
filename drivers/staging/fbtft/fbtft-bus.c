@@ -148,37 +148,29 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	}
 	lock = true;
 
-	/* Debug fps */
-#define FPS_DEBUG
-#ifdef FPS_DEBUG
-	long fps;
+    /* Freq */
+#define SECS_SPI_ASYNC_FREQ		FBTFT_FREQ_UPDATE_SECS
+    static ktime_t prev_ts = 0;
+    static int count = 0;
+    count++;
 	ktime_t ts_now = ktime_get();
-
-	/* First measurement */
-	if (!ktime_to_ns(par->update_time))
-		par->update_time = ts_now;
-
-	fps = ktime_us_delta(ts_now, par->update_time);
-	par->update_time = ts_now;
-	fps = fps ? 1000000 / fps : 0;
-
-	if (fps) {
-		par->avg_fps += fps;
-		par->nb_fps_values++;
-
-		if (par->nb_fps_values == 200) {
-			fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
-				 "Display update%s: fps=%ld\n", 
-				 par->pdata->te_irq_enabled?" (TE)":"",
-				 par->avg_fps / par->nb_fps_values);
-			printk("Display update%s: fps=%ld, par->nb_backbuffers_full=%d\n", 
-				 par->pdata->te_irq_enabled?" (TE)":"",
-				 par->avg_fps / par->nb_fps_values, par->nb_backbuffers_full);
-			par->avg_fps = 0;
-			par->nb_fps_values = 0;
-		}
+	int delta_ns = ktime_us_delta(ts_now, prev_ts);
+	if( delta_ns > SECS_SPI_ASYNC_FREQ*1000000){
+		par->freq_dma_transfers = count*1000000/delta_ns;
+		fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
+			 "Display update%s: fps=%ld\n, par->nb_backbuffers_full=%d", 
+			 par->pdata->te_irq_enabled?" (TE)":"",
+			 par->freq_dma_transfers, par->nb_backbuffers_full);
+//#define DEBUG_SPI_ASYNC_FREQ
+#ifdef DEBUG_SPI_ASYNC_FREQ
+		printk("Display update%s: fps=%ld, par->nb_backbuffers_full=%d\n", 
+			 par->pdata->te_irq_enabled?" (TE)":"",
+			 par->freq_dma_transfers, par->nb_backbuffers_full);
+#endif //DEBUG_SPI_ASYNC_FREQ
+		count = 0;
+		prev_ts = ts_now;
 	}
-#endif //FPS_DEBUG
+
 
 	/* Set vmem buf to transfer over SPI */
 	fbtft_set_vmem_buf(par);

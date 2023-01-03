@@ -31,6 +31,7 @@
 #define FBTFT_MAX_INIT_SEQUENCE      		512
 #define FBTFT_GAMMA_MAX_VALUES_TOTAL 		128
 #define FBTFT_OVERLAY_NB_VALUES				4
+#define FBTFT_FREQ_UPDATE_SECS				2
 
 #define FBTFT_NOTIF_MAX_SIZE				400
 
@@ -270,12 +271,17 @@ struct fbtft_par {
 	char notification[FBTFT_NOTIF_MAX_SIZE+1];
 	unsigned long debug;
 	unsigned long low_battery;
-	bool first_update_done;
-	ktime_t update_time;
-	long avg_fps;
-	int nb_fps_values;
 	bool bgr;
 	void *extra;
+
+	/* Frequencies */
+	int freq_ioctl;
+	int ns_between_ioctl;
+	int freq_te;
+	int freq_dma_transfers;
+	long avg_fps;
+	bool first_update_done;
+	ktime_t update_time;
 
 	/* SPI async */
 	bool spi_async_mode;

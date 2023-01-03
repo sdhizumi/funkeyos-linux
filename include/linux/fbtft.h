@@ -277,6 +277,7 @@ struct fbtft_par {
 	/* Frequencies */
 	int freq_ioctl;
 	int ns_between_ioctl;
+	ktime_t ts_last_ioctl;
 	int freq_te;
 	int freq_dma_transfers;
 	long avg_fps;

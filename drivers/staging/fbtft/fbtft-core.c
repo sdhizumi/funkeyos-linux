@@ -1075,12 +1075,9 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 
 
 	/* FPS */
-	static ktime_t ts_earlier = 0;
-	static long ns_between_frames = 0;
-	
 	ktime_t ts_now = ktime_get();
-	par->ns_between_ioctl = ktime_us_delta(ts_now, ts_earlier);
-	ts_earlier = ts_now;
+	par->ns_between_ioctl = ktime_us_delta(ts_now, par->ts_last_ioctl);
+	par->ts_last_ioctl = ts_now;
 
 #define IOCTL_FREQ_SECS		FBTFT_FREQ_UPDATE_SECS
 	static ktime_t ts_earlier_fps = 0;
@@ -1088,12 +1085,12 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 	static int ns_between_frames_avg = 0;
 
 	count++;
-	ns_between_frames_avg += (int)ns_between_frames;
+	ns_between_frames_avg += (int)par->ns_between_ioctl;
 	int delta_ns = (int)ktime_us_delta(ts_now, ts_earlier_fps);
 
 	if( delta_ns > (IOCTL_FREQ_SECS*1000000) && count ){
 		par->freq_ioctl = count*1000000/delta_ns;
-//#define DEBUG_IOCTL_FREQ
+#define DEBUG_IOCTL_FREQ
 #ifdef DEBUG_IOCTL_FREQ
 		printk("IOCTL triggered %ld/s, avg ms between frames: %ld\n", 
 			par->freq_ioctl, ns_between_frames_avg/1000/count);
@@ -1834,6 +1831,7 @@ static u32 fbtft_of_value(struct device_node *node, const char *propname)
 static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 {
     struct fbtft_platform_data *pdata = (struct fbtft_platform_data *) dev_id;
+    struct fbtft_par *par = pdata->par;
 
     /* Freq */
 #define SECS_TE_IRQ_FREQ	FBTFT_FREQ_UPDATE_SECS
@@ -1841,20 +1839,33 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
     static int te_count = 0;
     te_count++;
 	ktime_t ts_now = ktime_get();
-	int delta_ns = ktime_us_delta(ts_now, prev_ts);
+	int delta_ns = (int)ktime_us_delta(ts_now, prev_ts);
 	if( delta_ns > SECS_TE_IRQ_FREQ*1000000){
-		pdata->par->freq_te = te_count*1000000/delta_ns;
+		par->freq_te = te_count*1000000/delta_ns;
 //#define DEBUG_TE_IRQ_FREQ
 #ifdef DEBUG_TE_IRQ_FREQ
-		printk("TE irq: %d times/sec\n", pdata->par->freq_te);
+		printk("TE irq: %d times/sec\n", par->freq_te);
 #endif //DEBUG_TE_IRQ_FREQ
 		te_count = 0;
 		prev_ts = ts_now;
 	}
 
 	/* Sanity check: SPI still transfering data */
-	if(!pdata->par->ready_for_spi_async)
+	if(!par->ready_for_spi_async){
 		return IRQ_HANDLED;
+	}
+
+	/* Sanity check: to avoid applicative tearing if user process fps is lower than TE freq
+	   if (backbuffers not yet full) => wait a litte so that 
+	   the user process has the time to fill a backbuffer 
+	*/
+#define MIN_FPS_WITHOUT_APPLICATIVE_TEARING		10
+	int ns_since_last_ioctl = (int)ktime_us_delta(ktime_get(), par->ts_last_ioctl);
+	if(	!par->nb_backbuffers_full &&
+		ns_since_last_ioctl < 1000000/MIN_FPS_WITHOUT_APPLICATIVE_TEARING &&
+		ns_since_last_ioctl < (par->ns_between_ioctl*2) ){
+		return IRQ_HANDLED;		
+	}
 	
 	/* Trigger new SPI transfer */
 	fbtft_start_new_screen_transfer_async(pdata->par);

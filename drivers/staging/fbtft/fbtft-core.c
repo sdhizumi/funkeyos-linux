@@ -586,11 +586,14 @@ Copy framebuffer memory in current back buffer, then
 change current back buffer idx.
 Used by FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface)
 */
-static void fbtft_flip_backbuffer(struct fbtft_par *par)
+static void fbtft_flip_backbuffer(struct fb_var_screeninfo *var, struct fb_info *info)
 {
 	/* Vars */
+	struct fbtft_par *par = info->par;
 	u8 *vmem;
 
+
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	/* Add HID */
 	vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_postprocess_cpy);
 	
@@ -664,13 +667,24 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 		vmem = par->vmem_back_buffers[par->vmem_cur_buf_idx];
 	}
 
-	/* Update backbuffers idx */
+	/* Update vmem buffer idx */
 	par->vmem_last_full_buf_idx = par->vmem_cur_buf_idx;
 	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
 	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS){
 		par->nb_backbuffers_full++;
 	}
 	//printk("f%d\n", par->nb_backbuffers_full);
+
+#else //FBTFT_USE_BACK_BUFFERS_COPIES
+
+	struct fb_fix_screeninfo *fix = &info->fix;
+	par->vmem_last_full_buf_idx = var->yoffset/fix->ypanstep;
+	//par->vmem_cur_buf_idx = (par->vmem_last_full_buf_idx+1)%FBTFT_VMEM_BUFS;
+	//printk(KERN_EMERG "vmem_last_full_buf_idx=%d\n", par->vmem_last_full_buf_idx);
+	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS){
+		par->nb_backbuffers_full++;
+	}
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 }
 
 	
@@ -679,11 +693,12 @@ static void fbtft_flip_backbuffer(struct fbtft_par *par)
 This could be handled using a double mmapped buffer (or triple) 
 pointed by par->info->screen_buffer. The buffer pointed
 (the one being written) should change using the
-FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface). 
+FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface).
 */
 void fbtft_set_vmem_buf(struct fbtft_par *par){
 
-	// In case screen is synchronized with FBIOPAN_DISPLAY ioctls
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
+	// In case frame buffers are full (sync with FBIOPAN_DISPLAY ioctls)
 	if(par->nb_backbuffers_full > 0){
 		//printk("%d->0\n", par->nb_backbuffers_full);
 		par->nb_backbuffers_full=0; // 0 forced (no decrement here) since only the latest one is up to date
@@ -724,9 +739,18 @@ void fbtft_set_vmem_buf(struct fbtft_par *par){
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 		}
 	}
-	
-	//Bypass:
-	//par->vmem_ptr = par->info->screen_buffer;
+#else //FBTFT_USE_BACK_BUFFERS_COPIES
+	if(par->nb_backbuffers_full > 0){
+		par->nb_backbuffers_full=0; 
+		//printk("KERN_EMERG using vmem_last_full_buf_idx=%d\n", par->vmem_last_full_buf_idx);
+		par->vmem_ptr = par->info->screen_buffer + (par->vmem_last_full_buf_idx*par->vmem_size);
+	}
+	else{
+		//Bypass:
+		par->vmem_ptr = par->info->screen_buffer;
+	}
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
+
 	
 	/* Controlled delay for tearing line tests */
 //#define DELAY_NOP	5500000
@@ -1102,9 +1126,13 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 
 
 	/* Process current framebuffer */
-	fbtft_flip_backbuffer(par);
-	
+	fbtft_flip_backbuffer(var, info);
+
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	return -ENODEV; // forced or SDL segfaults (when flipping surface->pixels buffer. In our case it shoud not be done, we have 1 pixel buffer to save ram)
+#else 	//FBTFT_USE_BACK_BUFFERS_COPIES
+	return 0;
+#endif 	//FBTFT_USE_BACK_BUFFERS_COPIES
 }
 
 static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
@@ -1176,7 +1204,9 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	struct fb_ops *fbops = NULL;
 	struct fb_deferred_io *fbdefio = NULL;
 	u8 *vmem = NULL;
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS] = {NULL};
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 	u8 *vmem_postprocess_cpy = NULL;
 	void *txbuf = NULL;
 	void *buf = NULL;
@@ -1248,7 +1278,12 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	vmem_size = display->width * display->height * bpp / 8;
 	//vmem = devm_kzalloc(dev, vmem_size, GFP_KERNEL); // TRAP. Managed kzalloc. Memory allocated with this function is automatically freed on driver detach
 	//vmem = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
+
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	vmem = vzalloc(vmem_size);
+	if (!vmem)
+		goto alloc_fail;
+
 	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
 	{
 		vmem_back_buffers[i] = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
@@ -1257,6 +1292,11 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		if (!vmem_back_buffers[i])
 			goto alloc_fail;
 	}
+#else
+	vmem = vzalloc(vmem_size*FBTFT_VMEM_BUFS); // Allocate directly 3 frame buffers
+	if (!vmem)
+		goto alloc_fail;
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 
 	vmem_postprocess_cpy = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
 	//vmem_postprocess_cpy = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
@@ -1316,17 +1356,21 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	info->fix.type =           FB_TYPE_PACKED_PIXELS;
 	info->fix.visual =         FB_VISUAL_TRUECOLOR;
 	info->fix.xpanstep =	   0;
-	info->fix.ypanstep =	   0;
+	info->fix.ypanstep =	   height;
 	info->fix.ywrapstep =	   0;
 	info->fix.line_length =    width * bpp / 8;
 	info->fix.accel =          FB_ACCEL_NONE;
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	info->fix.smem_len =       vmem_size;
+#else
+	info->fix.smem_len =       vmem_size*FBTFT_VMEM_BUFS;
+#endif
 
 	info->var.rotate =         pdata->rotate;
 	info->var.xres =           width;
 	info->var.yres =           height;
 	info->var.xres_virtual =   info->var.xres;
-	info->var.yres_virtual =   info->var.yres*2; // So that SDL allows SDL_DOUBLEBUF
+	info->var.yres_virtual =   info->var.yres*FBTFT_VMEM_BUFS; // So that SDL allows SDL_DOUBLEBUF and SDL_TRIPLEBUF
 	info->var.bits_per_pixel = bpp;
 	info->var.nonstd =         1;
 
@@ -1345,10 +1389,12 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	par = info->par;
 	par->info = info;
 	par->vmem_size = vmem_size;
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
 	{
 		par->vmem_back_buffers[i] = vmem_back_buffers[i];
 	}
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 	par->vmem_postprocess_cpy = vmem_postprocess_cpy;
 	par->vmem_last_full_buf_idx = 0;
 	par->vmem_cur_buf_idx = 0;
@@ -1859,7 +1905,7 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	   if (backbuffers not yet full) => wait a litte so that 
 	   the user process has the time to fill a backbuffer 
 	*/
-#define MIN_FPS_WITHOUT_APPLICATIVE_TEARING		10
+#define MIN_FPS_WITHOUT_APPLICATIVE_TEARING		9
 	int ns_since_last_ioctl = (int)ktime_us_delta(ktime_get(), par->ts_last_ioctl);
 	if(	!par->nb_backbuffers_full &&
 		ns_since_last_ioctl < 1000000/MIN_FPS_WITHOUT_APPLICATIVE_TEARING &&

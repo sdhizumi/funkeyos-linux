@@ -20,10 +20,25 @@
 #include <linux/spi/spi.h>
 #include <linux/platform_device.h>
 
-
+/* Nb of framebuffers */
 #define FBTFT_VMEM_BUFS						3
-//#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+
+/* This will use copies as framebuffers
+	There is only 1 framebuffer but it is copied 
+	to 3 backbuffers on every FBIOPAN_DISPLAY calls 
+	Do not define this to work directly with 
+	framebuffers, without copy.
+*/
+//#define FBTFT_USE_BACK_BUFFERS_COPIES	
+
+/* Neon rotation and matric transpose, 
+	cannot be called in an interrupt context though
+	because NEON is not allowed.
+ */
 #define FBTFT_NEON_OPTIMS
+
+/* Matrix transpose instead of rotation */
+//#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 
 #define FBTFT_ONBOARD_BACKLIGHT 			2
 #define FBTFT_GPIO_NO_MATCH					0xFFFF
@@ -230,7 +245,9 @@ struct fbtft_par {
 	u8 *buf;
 	u8 *vmem_ptr;
 	u8 *vmem_postprocess_cpy;
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS];
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 	u8 vmem_last_full_buf_idx;
 	u8 vmem_cur_buf_idx;
 	int vmem_size;

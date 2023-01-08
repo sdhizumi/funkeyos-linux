@@ -244,9 +244,11 @@ struct fbtft_par {
 	} txbuf;
 	u8 *buf;
 	u8 *vmem_ptr;
-	u8 *vmem_postprocess_cpy;
+	u8 *vmem_postprocess_hid;
 #ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS];
+#else  //FBTFT_USE_BACK_BUFFERS_COPIES
+	u8 *vmem_postprocess_rot;
 #endif //FBTFT_USE_BACK_BUFFERS_COPIES
 	u8 vmem_last_full_buf_idx;
 	u8 vmem_cur_buf_idx;

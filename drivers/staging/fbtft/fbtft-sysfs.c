@@ -422,8 +422,12 @@ static ssize_t store_switch_backbuf(struct device *device,
 			   const char *buf, size_t count)
 {
 	struct fb_info *fb_info = dev_get_drvdata(device);
-	//fbtft_flip_backbuffer(fb_info->par);
-	fb_info->fbops->fb_pan_display(NULL, fb_info);
+	struct fbtft_par *par = fb_info->par;
+	struct fb_fix_screeninfo *fix = &fb_info->fix;
+	struct fb_var_screeninfo var = {
+			.yoffset = par->vmem_cur_buf_idx*fix->ypanstep
+		};
+	fb_info->fbops->fb_pan_display(&var, fb_info);
 	
 	return count;
 }

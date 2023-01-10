@@ -1195,7 +1195,8 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 	int delta_ns = (int)ktime_us_delta(ts_now, ts_earlier_fps);
 
 	if( delta_ns > (IOCTL_FREQ_SECS*1000000) && count ){
-		par->freq_ioctl = count*1000000/delta_ns;
+		//par->freq_ioctl = count*1000000/delta_ns; // floored value
+		par->freq_ioctl = (2*count*1000000+delta_ns) / (2*delta_ns); // rounded value
 //#define DEBUG_IOCTL_FREQ
 #ifdef DEBUG_IOCTL_FREQ
 		printk("IOCTL triggered %ld/s, avg ms between frames: %ld\n", 
@@ -1991,7 +1992,8 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	ktime_t ts_now = ktime_get();
 	int delta_ns = (int)ktime_us_delta(ts_now, prev_ts);
 	if( delta_ns > SECS_TE_IRQ_FREQ*1000000){
-		par->freq_te = te_count*1000000/delta_ns;
+		//par->freq_te = te_count*1000000/delta_ns; // floored value
+		par->freq_te = (2*te_count*1000000+delta_ns) / ( 2*delta_ns); // rounded value
 //#define DEBUG_TE_IRQ_FREQ
 #ifdef DEBUG_TE_IRQ_FREQ
 		printk("TE irq: %d times/sec\n", par->freq_te);

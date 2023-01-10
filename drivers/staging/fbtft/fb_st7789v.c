@@ -208,6 +208,12 @@ static int init_display(struct fbtft_par *par)
 	u8 frctrl2_par = 0;
 	//frctrl2_par |= FRCTRL2_COL_INV;
 
+	/* This config bellow does not really change anything
+		The TE frequency (that should happen at every Vsync)
+		is always at the same frequency (58-59 times per sec). 
+		Only changing the back and front porch size	
+		really have an impact on this frequency.
+	*/
 	//frctrl2_par |= 0x1F; //39Hz
 	//frctrl2_par |= 0x1A; //44Hz
 	//frctrl2_par |= 0x18; //46Hz

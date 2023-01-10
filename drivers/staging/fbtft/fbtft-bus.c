@@ -156,7 +156,8 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	ktime_t ts_now = ktime_get();
 	int delta_ns = ktime_us_delta(ts_now, prev_ts);
 	if( delta_ns > SECS_SPI_ASYNC_FREQ*1000000){
-		par->freq_dma_transfers = count*1000000/delta_ns;
+		//par->freq_dma_transfers = count*1000000/delta_ns; // floored value
+		par->freq_dma_transfers = (2*count*1000000+delta_ns) / (2*delta_ns); // rounded value
 		fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
 			 "Display update%s: fps=%ld\n, par->nb_backbuffers_full=%d", 
 			 par->pdata->te_irq_enabled?" (TE)":"",

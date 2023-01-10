@@ -195,6 +195,7 @@
 		to respect the display's 16ns minimum writing speed.
 		*/
 		spi-max-frequency = <62500000>;
+		//spi-max-frequency = <50000000>;
 		spi_async_mode = "true";
 		//txbuflen = <115202>; // 240x240x2 Not needed in async mode
 		//txbuflen = <153600>; // 320x240x2 Not needed in async mode

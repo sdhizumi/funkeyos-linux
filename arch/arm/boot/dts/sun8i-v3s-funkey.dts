@@ -179,17 +179,25 @@
 	status = "okay";
 
 	st7789v@0 {
+
+		/* Display driver name */
 		compatible = "sitronix,st7789v";
 		reg = <0>;
+
+		/* Display dimensions 
+		if need to surcharge default dimensions
+		*/
+		//width = <240>;
+		//height = <240>;	// FunKey S
 		
 		/* SPI freq 
 		62.5Mhz = max theoritical frequency 
 		to respect the display's 16ns minimum writing speed.
 		*/
 		spi-max-frequency = <62500000>;
-		
 		spi_async_mode = "true";
-		txbuflen = <115202>; // Not needed in async mode
+		//txbuflen = <115202>; // 240x240x2 Not needed in async mode
+		//txbuflen = <153600>; // 320x240x2 Not needed in async mode
 		fps = <100>; // Not needed in async mode
 		buswidth = <8>;
 
@@ -198,17 +206,23 @@
 		is impossible even with TE synchro 
 		since there isn't the equivalent of 
 		MV (x/y inversion) for the display 
-		read (from GRAM) order */
+		read (from GRAM) order. This is due to 
+		how LCD technology activate gates in 
+		horizontal lines to set pixel values. 
+		It is electrical and cannot be changed */
 		//rotate = <90>;	
 		
 		/* Software rotate (Clockwise)
 		0, 90 or 270 accepted */
-		rotate_soft = <270>; 
+		rotate_soft = <270>;
 
-		debug = <0>;	
+		/* Hardware GPIOs */
 		reset-gpios = <&pio 1 2 GPIO_ACTIVE_HIGH>;	//PB2
 		dc-gpios = <&pio 2 0 GPIO_ACTIVE_LOW>;		//PC0 (MISO)
 		te-irq = <&pio 1 1 GPIO_ACTIVE_LOW>;		//PB1
+
+		/* Other params */
+		debug = <0>;
 	};
 };
 

@@ -255,6 +255,16 @@ struct fbtft_par {
 	int vmem_size;
 	int nb_backbuffers_full;
 	bool force_post_process;
+	
+	/* While info->var.xres and info->var.yres 
+	save the visible resolution infomation, these variables 
+	save the full driver resolution. 
+	Used when the display's visible resolution is 
+	smaller than the one for a given driver. 
+	(Funkey S is 240x240 but st7789 driver default is 320x240)
+	*/
+	u32 driver_xres;			
+	u32 driver_yres;
 
 	u8 startbyte;
 	struct fbtft_ops fbtftops;

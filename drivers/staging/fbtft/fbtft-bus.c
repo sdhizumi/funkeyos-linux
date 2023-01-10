@@ -191,6 +191,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	} 
 	/* Start sending full screen */
 	else {
+
 //#define FORCE_RESEND_TRANSFER_CMD 
 #ifdef FORCE_RESEND_TRANSFER_CMD
 		#warning force send SPI transfer command

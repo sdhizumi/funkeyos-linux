@@ -243,6 +243,7 @@ static int set_var(struct fbtft_par *par)
 
 	if (par->bgr)
 		madctl_par |= MADCTL_BGR;
+
 	switch (par->info->var.rotate) {
 	case 0:
 		break;
@@ -282,7 +283,10 @@ static int set_var(struct fbtft_par *par)
 	write_reg(par, 0x2B, 0x00, 0x00, 0x00, 0xEF);
 
 	/* Xstart at 80 , Xend at 319 */
-	write_reg(par, 0x2A, 0x00, 0x50, 0x01, 0x3F);
+	//write_reg(par, 0x2A, 0x00, 0x50, 0x01, 0x3F);
+
+	/* Xstart at 0 , Xend at 319 */
+	write_reg(par, 0x2A, 0x00, 0x00, 0x01, 0x3F);
 
 	return 0;
 }
@@ -364,7 +368,7 @@ static int blank(struct fbtft_par *par, bool on)
 static struct fbtft_display display = {
 	.regwidth = 8,
 	.width = 240,
-	.height = 240,
+	.height = 320,
 	.gamma_num = 2,
 	.gamma_len = 14,
 	.gamma = DEFAULT_GAMMA,

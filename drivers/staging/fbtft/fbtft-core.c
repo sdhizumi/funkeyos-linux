@@ -433,12 +433,23 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 
 		fbtft_par_dbg(DEBUG_UPDATE_DISPLAY, par, "%s(start_line=%u, end_line=%u)\n",
 			      __func__, start_line, end_line);
-		if (par->pdata->rotate == 90)
-			par->fbtftops.set_addr_win(par, 80, start_line,
-				320 - 1, end_line);
-		else if (par->pdata->rotate == 180)
-			par->fbtftops.set_addr_win(par, 0, 80,
-				par->info->var.xres - 1, 320 - 1);	
+		if (par->pdata->rotate == 90){
+			par->fbtftops.set_addr_win(par, par->driver_xres-par->info->var.xres, start_line,
+				par->driver_xres - 1, end_line);
+		}
+		else if (par->pdata->rotate == 180){
+			par->fbtftops.set_addr_win(par, 0, par->driver_xres-par->info->var.xres,
+				par->info->var.xres - 1, par->driver_xres - 1);	
+		}
+		else if (par->pdata->rotate_soft == 90 || par->pdata->rotate_soft == 270){
+			/* Software rotate only simulates hardware rotation, 
+				so the var.xres and var.yres were reversed but 
+				the real display xres and yres have not changed 
+				Btw, fullscreen here.
+			*/
+			par->fbtftops.set_addr_win(par, 0, 0,
+				par->info->var.yres - 1, par->info->var.xres - 1);
+		}
 		else{
 			par->fbtftops.set_addr_win(par, 0, start_line,
 				par->info->var.xres - 1, end_line);
@@ -1282,8 +1293,8 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	u8 *vmem_postprocess_hid = NULL;
 	void *txbuf = NULL;
 	void *buf = NULL;
-	unsigned int width;
-	unsigned int height;
+	unsigned int width, height;
+	unsigned int disp_width, disp_height;
 	int txbuflen = display->txbuflen;
 	unsigned int bpp = display->bpp;
 	unsigned int fps = display->fps;
@@ -1311,7 +1322,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		return NULL;
 	}
 
-	/* override driver values? */
+	/* Override values? */
 	if (pdata->fps)
 		fps = pdata->fps;
 	if (pdata->txbuflen)
@@ -1324,10 +1335,10 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		display->debug = pdata->display.debug;
 	if (pdata->display.backlight)
 		display->backlight = pdata->display.backlight;
-	if (pdata->display.width)
-		display->width = pdata->display.width;
-	if (pdata->display.height)
-		display->height = pdata->display.height;
+	if (!pdata->display.width)
+		pdata->display.width = display->width;
+	if (!pdata->display.height)
+		pdata->display.height = display->height;
 	if (pdata->display.buswidth)
 		display->buswidth = pdata->display.buswidth;
 	if (pdata->display.regwidth)
@@ -1336,18 +1347,22 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	display->debug |= debug;
 	fbtft_expand_debug_value(&display->debug);
 
-	switch (pdata->rotate || pdata->rotate_soft) {
-	case 90:
-	case 270:
-		width =  display->height;
-		height = display->width;
-		break;
-	default:
-		width =  display->width;
-		height = display->height;
+	if (pdata->rotate == 90 || pdata->rotate == 270
+		|| pdata->rotate_soft == 90 || pdata->rotate_soft == 270 
+		) {
+		width =  pdata->display.height;
+		height = pdata->display.width;
+		disp_width = display->height;
+		disp_height = display->width;
+	}
+	else{
+		width =  pdata->display.width;
+		height = pdata->display.height;
+		disp_width = display->width;
+		disp_height = display->height;
 	}
 
-	vmem_size = display->width * display->height * bpp / 8;
+	vmem_size = width * height * bpp / 8;
 	//vmem = devm_kzalloc(dev, vmem_size, GFP_KERNEL); // TRAP. Managed kzalloc. Memory allocated with this function is automatically freed on driver detach
 	//vmem = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
 
@@ -1465,6 +1480,8 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 
 	par = info->par;
 	par->info = info;
+	par->driver_xres = disp_width;
+	par->driver_yres = disp_height;
 	par->vmem_size = vmem_size;
 #ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
@@ -1596,6 +1613,7 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 	int ret;
 	char text1[50] = "";
 	char text2[50] = "";
+	char text3[50] = "";
 	struct fbtft_par *par = fb_info->par;
 	struct spi_device *spi = par->spi;
 
@@ -1648,18 +1666,25 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 
 	fbtft_sysfs_init(par);
 
-	if (par->txbuf.buf && par->txbuf.len >= 1024)
+	if (par->txbuf.buf && par->txbuf.len >= 1024){
 		sprintf(text1, ", %zu KiB buffer memory", par->txbuf.len >> 10);
-	if (spi)
+	}
+	if (spi){
 		sprintf(text2, ", spi%d.%d at %d MHz", spi->master->bus_num,
 			spi->chip_select, spi->max_speed_hz / 1000000);
+	}
+	if (fb_info->var.xres != par->driver_xres || fb_info->var.yres != par->driver_yres ){
+		sprintf(text3, " used res out of %dx%d driver full res", 
+			par->driver_xres, par->driver_yres);
+	}
+
 	dev_info(fb_info->dev,
-		 "%s frame buffer, %dx%d, %d KiB video memory%s, %d back buffers, fps=%lu%s, %s%s\n",
-		 fb_info->fix.id, fb_info->var.xres, fb_info->var.yres,
+		 "%s frame buffer, %dx%d%s, %d KiB video memory%s, %d back buffers, fps=%lu%s%s%s\n",
+		 fb_info->fix.id, fb_info->var.xres, fb_info->var.yres, text3,
 		 fb_info->fix.smem_len >> 10, text1, FBTFT_VMEM_BUFS,
 		 HZ / fb_info->fbdefio->delay, text2,
-		 par->spi_async_mode ? "SPI mode async, " : "",
-		 par->interlacing ? "Interlaced" : "");
+		 par->spi_async_mode ? ", SPI mode async" : "",
+		 par->interlacing ? ", Interlaced" : "");
 
 #ifdef CONFIG_FB_BACKLIGHT
 	/* Turn on backlight if available */

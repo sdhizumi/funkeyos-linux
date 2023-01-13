@@ -191,15 +191,24 @@
 		//height = <240>;	// FunKey S
 		
 		/* SPI freq 
-		62.5Mhz = max theoritical frequency 
+		- 62.5Mhz = max theoritical frequency 
 		to respect the display's 16ns minimum writing speed.
+		- 43Mhz = mimimum SPI speed (less strain) to write 
+		fast enough to avoid "ending" tearing line in 240x320 res (30fps)
+		- 60Mhz = minimum SPI speed to reach 60fps without backbuffers mode (less
+		CPU intensive) in 240x240
+		- 75Mhz = minimum SPI spead to reach 60fps in 240x320 res 
+		(needs more CPU intensive backbuffers mode)
 		*/
-		spi-max-frequency = <62500000>;
-		//spi-max-frequency = <50000000>;
+		//spi-max-frequency = <43000000>;
+		spi-max-frequency = <60000000>;
+		//spi-max-frequency = <62500000>;
+		//spi-max-frequency = <75000000>;
 		spi_async_mode = "true";
+
 		//txbuflen = <115202>; // 240x240x2 Not needed in async mode
 		//txbuflen = <153600>; // 320x240x2 Not needed in async mode
-		fps = <100>; // Not needed in async mode
+		fps = <100>; // Not really the fps, and not needed in async mode
 		buswidth = <8>;
 
 		/* Hardware rotate (counter clockwise)

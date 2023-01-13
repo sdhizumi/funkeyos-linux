@@ -1175,15 +1175,16 @@ static int fbtft_fb_blank(int blank, struct fb_info *info)
 static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *info)
 {
 	struct fbtft_par *par = info->par;
+	ktime_t ts_now;
 	int ret = -EINVAL;
 
 	dev_dbg(info->dev, "%s\n", __func__);
 
 
-	/* FPS */
-	ktime_t ts_now = ktime_get();
-	par->ns_between_ioctl = ktime_us_delta(ts_now, par->ts_last_ioctl);
-	par->ts_last_ioctl = ts_now;
+	/* Frequency of ioctl(FBIOPAN_DISPLAY) calls */
+	ts_now = ktime_get();
+	par->ns_between_ioctl_calls = ktime_us_delta(ts_now, par->ts_last_ioctl_call);
+	par->ts_last_ioctl_call = ts_now;
 
 #define IOCTL_FREQ_SECS		FBTFT_FREQ_UPDATE_SECS
 	static ktime_t ts_earlier_fps = 0;
@@ -1191,20 +1192,58 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 	static int ns_between_frames_avg = 0;
 
 	count++;
-	ns_between_frames_avg += (int)par->ns_between_ioctl;
+	ns_between_frames_avg += (int)par->ns_between_ioctl_calls;
 	int delta_ns = (int)ktime_us_delta(ts_now, ts_earlier_fps);
 
 	if( delta_ns > (IOCTL_FREQ_SECS*1000000) && count ){
-		//par->freq_ioctl = count*1000000/delta_ns; // floored value
-		par->freq_ioctl = (2*count*1000000+delta_ns) / (2*delta_ns); // rounded value
+		//par->freq_ioctl_calls = count*1000000/delta_ns; // floored value
+		par->freq_ioctl_calls = (2*count*1000000+delta_ns) / (2*delta_ns); // rounded value
 //#define DEBUG_IOCTL_FREQ
 #ifdef DEBUG_IOCTL_FREQ
-		printk("IOCTL triggered %ld/s, avg ms between frames: %ld\n", 
-			par->freq_ioctl, ns_between_frames_avg/1000/count);
+		printk("freq IOCTL calls %ld/s, avg ms between frames: %ld\n", 
+			par->freq_ioctl_calls, ns_between_frames_avg/1000/count);
 #endif //DEBUG_IOCTL_FREQ
 		ns_between_frames_avg = 0;
 		count = 0;
 		ts_earlier_fps = ts_now;
+	}
+
+	/* Limit fbtft_flip_backbuffer calls at par->freq_dma_transfers 
+	to avoid processing for nothing (less CPU overhead) */
+	static int last_nb_ioctl_calls_per_dma_transfers = 0;
+	static int idx_ioctl = 0;
+	int current_nb_ioctl_calls_per_dma_transfers = par->ns_between_dma_transfers/par->ns_between_ioctl_calls;
+	//int current_nb_ioctl_calls_per_dma_transfers = par->freq_ioctl_calls/par->freq_dma_transfers;
+	/*printk("cpt = %d, lcpt=%d\n", 
+		current_nb_ioctl_calls_per_dma_transfers, 
+		last_nb_ioctl_calls_per_dma_transfers);*/
+	if(last_nb_ioctl_calls_per_dma_transfers != current_nb_ioctl_calls_per_dma_transfers){
+		idx_ioctl = current_nb_ioctl_calls_per_dma_transfers-1;
+		last_nb_ioctl_calls_per_dma_transfers = current_nb_ioctl_calls_per_dma_transfers;
+	}
+	idx_ioctl = (idx_ioctl + 1)%current_nb_ioctl_calls_per_dma_transfers;
+	if(	par->freq_dma_transfers >= MIN_FPS_WITHOUT_APPLICATIVE_TEARING && 
+		current_nb_ioctl_calls_per_dma_transfers >= 2 && 
+		idx_ioctl != 0
+		){
+		return -ENODEV; 
+	}
+
+	/* Frequency of ioctl(FBIOPAN_DISPLAY) actual processes */
+	static int count2 = 0;
+	static ktime_t ts_earlier_adapted = 0;
+	ts_now = ktime_get();
+	int delta_ns2 = (int)ktime_us_delta(ts_now, ts_earlier_adapted);
+	count2++;
+	if( delta_ns2 > (IOCTL_FREQ_SECS*1000000) && count2 ){
+		//par->freq_ioctl_processes = count2*1000000/delta_ns2; // floored value
+		par->freq_ioctl_processes = (2*count2*1000000+delta_ns2) / (2*delta_ns2); // rounded value
+//#define DEBUG_IOCTL_ADAPTED_FREQ
+#ifdef DEBUG_IOCTL_ADAPTED_FREQ
+		printk("freq IOCTL processes %d/s\n", par->freq_ioctl_processes);
+#endif //DEBUG_IOCTL_ADAPTED_FREQ
+		count2 = 0;
+		ts_earlier_adapted = ts_now;
 	}
 
 	/* Process current framebuffer */
@@ -1668,7 +1707,7 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 	fbtft_sysfs_init(par);
 
 	if (par->txbuf.buf && par->txbuf.len >= 1024){
-		sprintf(text1, ", %zu KiB buffer memory", par->txbuf.len >> 10);
+		sprintf(text1, ", %zu KiB SPI buf memory", par->txbuf.len >> 10);
 	}
 	if (spi){
 		sprintf(text2, ", spi%d.%d at %d MHz", spi->master->bus_num,
@@ -1679,10 +1718,17 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 			par->driver_xres, par->driver_yres);
 	}
 
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
+	char *back_str = " back";
+#else
+	char *back_str = "";
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
+
 	dev_info(fb_info->dev,
-		 "%s frame buffer, %dx%d%s, %d KiB video memory%s, %d back buffers, fps=%lu%s%s%s\n",
+		 "%s frame buffer, %dx%d%s, %d KiB video memory%s, %d%s buffers, fps=%lu%s%s%s\n",
 		 fb_info->fix.id, fb_info->var.xres, fb_info->var.yres, text3,
-		 fb_info->fix.smem_len >> 10, text1, FBTFT_VMEM_BUFS,
+		 fb_info->fix.smem_len >> 10, text1, 
+		 FBTFT_VMEM_BUFS, back_str,
 		 HZ / fb_info->fbdefio->delay, text2,
 		 par->spi_async_mode ? ", SPI mode async" : "",
 		 par->interlacing ? ", Interlaced" : "");
@@ -2011,15 +2057,15 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	   if (backbuffers not yet full) => wait a litte so that 
 	   the user process has the time to fill a backbuffer 
 	*/
-#define MIN_FPS_WITHOUT_APPLICATIVE_TEARING		9
-	int ns_since_last_ioctl = (int)ktime_us_delta(ktime_get(), par->ts_last_ioctl);
+	int ns_since_last_ioctl = (int)ktime_us_delta(ktime_get(), par->ts_last_ioctl_call);
 	if(	!par->nb_backbuffers_full &&
 		ns_since_last_ioctl <= 1000000/MIN_FPS_WITHOUT_APPLICATIVE_TEARING &&
-		ns_since_last_ioctl < (par->ns_between_ioctl*2) ){
+		ns_since_last_ioctl < (par->ns_between_ioctl_calls*2) ){
 		return IRQ_HANDLED;		
 	}
 	else if(ns_since_last_ioctl > IOCTL_FREQ_SECS*1000000){
-		par->freq_ioctl = 0;
+		par->freq_ioctl_calls = 0;
+		par->freq_ioctl_processes = 0;
 	}
 	
 	/* Trigger new SPI transfer */
@@ -2228,7 +2274,8 @@ int fbtft_probe_common(struct fbtft_display *display,
 		(time when display is not reading GRAM)
 		but falling is better in practice since it gives 
 		some delay that hides the tearing line */
-		/*err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
+		/*#warning Rising edge for tests
+		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
 				IRQF_SHARED | IRQF_TRIGGER_RISING,
 	            "TE", par->pdata);*/
 		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 

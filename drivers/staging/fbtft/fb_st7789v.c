@@ -282,17 +282,20 @@ static int set_var(struct fbtft_par *par)
 		return -EINVAL;
 	}
 
+//#define HACK_TEST_LAST_TEARLINE
+#ifdef HACK_TEST_LAST_TEARLINE
+	#warning HACK_TEST_LAST_TEARLINE
+	madctl_par |= (MADCTL_MY | MADCTL_MX | MADCTL_ML | MADCTL_MH);
+#endif //HACK_TEST_LAST_TEARLINE
+
 	write_reg(par, MIPI_DCS_SET_ADDRESS_MODE, madctl_par);
 
-	// All offset operations are done after in fbtft_set_addr_win, not here
-	/* Ystart at 0 , Yend at 239 */
-	write_reg(par, 0x2B, 0x00, 0x00, 0x00, 0xEF);
+	// All windows settings are surcharged after in fbtft_set_addr_win
+	/* Xstart at 0 , Xend at 239 */
+	write_reg(par, 0x2A, 0x00, 0x00, 0x00, 0xEF);
 
-	/* Xstart at 80 , Xend at 319 */
-	//write_reg(par, 0x2A, 0x00, 0x50, 0x01, 0x3F);
-
-	/* Xstart at 0 , Xend at 319 */
-	write_reg(par, 0x2A, 0x00, 0x00, 0x01, 0x3F);
+	/* Ystart at 0 , Yend at 319 */
+	write_reg(par, 0x2B, 0x00, 0x00, 0x01, 0x3F);
 
 	return 0;
 }

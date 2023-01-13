@@ -29,16 +29,22 @@
 	Do not define this to work directly with 
 	framebuffers, without copy.
 */
-//#define FBTFT_USE_BACK_BUFFERS_COPIES	
+//#define FBTFT_USE_BACK_BUFFERS_COPIES
 
 /* Neon rotation and matric transpose, 
 	cannot be called in an interrupt context though
 	because NEON is not allowed.
  */
-#define FBTFT_NEON_OPTIMS
+//#define FBTFT_NEON_OPTIMS
 
 /* Matrix transpose instead of rotation */
 //#define FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+
+/*	Avoid applicative tearing if user process fps is lower than TE freq
+	if (backbuffers not yet full) => wait a litte so that 
+	the user process has the time to fill a backbuffer 
+*/
+#define MIN_FPS_WITHOUT_APPLICATIVE_TEARING		9
 
 #define FBTFT_ONBOARD_BACKLIGHT 			2
 #define FBTFT_GPIO_NO_MATCH					0xFFFF
@@ -304,11 +310,13 @@ struct fbtft_par {
 	void *extra;
 
 	/* Frequencies */
-	int freq_ioctl;
-	int ns_between_ioctl;
-	ktime_t ts_last_ioctl;
+	int freq_ioctl_calls;
+	int ns_between_ioctl_calls;
+	ktime_t ts_last_ioctl_call;
+	int freq_ioctl_processes;
 	int freq_te;
 	int freq_dma_transfers;
+	int ns_between_dma_transfers;
 	long avg_fps;
 	bool first_update_done;
 	ktime_t update_time;

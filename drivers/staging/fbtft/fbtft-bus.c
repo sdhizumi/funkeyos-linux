@@ -150,10 +150,13 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 
     /* Freq */
 #define SECS_SPI_ASYNC_FREQ		FBTFT_FREQ_UPDATE_SECS
-    static ktime_t prev_ts = 0;
+    static ktime_t prev_ts = {0};
+    static ktime_t ts_last_dma_transfer = {0};
     static int count = 0;
     count++;
 	ktime_t ts_now = ktime_get();
+	par->ns_between_dma_transfers = (int)ktime_us_delta(ts_now, ts_last_dma_transfer);
+	ts_last_dma_transfer = ts_now;
 	int delta_ns = ktime_us_delta(ts_now, prev_ts);
 	if( delta_ns > SECS_SPI_ASYNC_FREQ*1000000){
 		//par->freq_dma_transfers = count*1000000/delta_ns; // floored value

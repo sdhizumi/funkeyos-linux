@@ -29,7 +29,7 @@
 	Do not define this to work directly with 
 	framebuffers, without copy.
 */
-//#define FBTFT_USE_BACK_BUFFERS_COPIES
+#define FBTFT_USE_BACK_BUFFERS_COPIES
 
 /* Neon rotation and matric transpose, 
 	cannot be called in an interrupt context though
@@ -311,12 +311,12 @@ struct fbtft_par {
 
 	/* Frequencies */
 	int freq_ioctl_calls;
-	int ns_between_ioctl_calls;
+	int us_between_ioctl_calls;
 	ktime_t ts_last_ioctl_call;
 	int freq_ioctl_processes;
 	int freq_te;
 	int freq_dma_transfers;
-	int ns_between_dma_transfers;
+	int us_between_dma_transfers;
 	long avg_fps;
 	bool first_update_done;
 	ktime_t update_time;

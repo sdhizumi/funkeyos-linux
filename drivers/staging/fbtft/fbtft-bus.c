@@ -134,12 +134,13 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 		ktime_t ts_now_lock = ktime_get();
 		if (!ktime_to_ns(ts_lock_disp_last_time))
 			ts_lock_disp_last_time = ts_now_lock;
+		if(ts_now_lock<ts_lock_disp_last_time) ts_lock_disp_last_time = ts_now_lock; // overflow
 
 		#define SECS_MAX_PRINT_TE_LOCK	10
-		long delta_ns_lock = ktime_us_delta(ts_now_lock, ts_lock_disp_last_time);
-		if( delta_ns_lock > (SECS_MAX_PRINT_TE_LOCK*1000000) ){
+		long delta_us_lock = ktime_us_delta(ts_now_lock, ts_lock_disp_last_time);
+		if( delta_us_lock > (SECS_MAX_PRINT_TE_LOCK*1000000) ){
 			pr_info("%s: Warning, TE too fast (%d interrupts not handled last %ld secs)\n", 
-				__func__, lock_cnt, delta_ns_lock/1000000);
+				__func__, lock_cnt, delta_us_lock/1000000);
 			ts_lock_disp_last_time = ts_now_lock;
 			lock_cnt = 0;
 		}
@@ -153,14 +154,21 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
     static ktime_t prev_ts = {0};
     static ktime_t ts_last_dma_transfer = {0};
     static int count = 0;
-    count++;
 	ktime_t ts_now = ktime_get();
-	par->ns_between_dma_transfers = (int)ktime_us_delta(ts_now, ts_last_dma_transfer);
+	// Overflow:
+	if(ts_now < ts_last_dma_transfer){
+		count = 0;
+		prev_ts = ts_now;
+	}
+	else{
+    	count++;
+	}
+	par->us_between_dma_transfers = (int)ktime_us_delta(ts_now, ts_last_dma_transfer);
 	ts_last_dma_transfer = ts_now;
-	int delta_ns = ktime_us_delta(ts_now, prev_ts);
-	if( delta_ns > SECS_SPI_ASYNC_FREQ*1000000){
-		//par->freq_dma_transfers = count*1000000/delta_ns; // floored value
-		par->freq_dma_transfers = (2*count*1000000+delta_ns) / (2*delta_ns); // rounded value
+	int delta_us = ktime_us_delta(ts_now, prev_ts);
+	if( delta_us > SECS_SPI_ASYNC_FREQ*1000000){
+		//par->freq_dma_transfers = count*1000000/delta_us; // floored value
+		par->freq_dma_transfers = (2*count*1000000+delta_us) / (2*delta_us); // rounded value
 		fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
 			 "Display update%s: fps=%ld\n, par->nb_backbuffers_full=%d", 
 			 par->pdata->te_irq_enabled?" (TE)":"",

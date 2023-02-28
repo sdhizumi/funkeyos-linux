@@ -20,16 +20,18 @@
 #include <linux/spi/spi.h>
 #include <linux/platform_device.h>
 
-/* Nb of framebuffers */
-#define FBTFT_VMEM_BUFS						3
-
-/* This will use copies as framebuffers
-	There is only 1 framebuffer but it is copied 
-	to 3 backbuffers on every FBIOPAN_DISPLAY calls 
-	Do not define this to work directly with 
-	framebuffers, without copy.
+/* 	In this mode there is only 1 framebuffer 
+	exposed to the system that is copied 
+	to backbuffers on every FBIOPAN_DISPLAY calls
 */
 #define FBTFT_USE_BACK_BUFFERS_COPIES
+
+/* Nb of framebuffers */
+#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
+	#define FBTFT_VMEM_BUFS						5 	// Minimum 2
+#else  //FBTFT_USE_BACK_BUFFERS_COPIES
+	#define FBTFT_VMEM_BUFS						3 	// Minimum 2
+#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 
 /* Neon rotation and matric transpose, 
 	cannot be called in an interrupt context though

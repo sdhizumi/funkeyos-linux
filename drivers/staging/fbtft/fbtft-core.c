@@ -678,7 +678,7 @@ static void fbtft_flip_backbuffer(struct fb_var_screeninfo *var, struct fb_info 
 	/* Update vmem buffer idx */
 	par->vmem_last_full_buf_idx = par->vmem_cur_buf_idx;
 	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
-	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS){
+	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS-1){   // -1 because one framebuffer is never "full" since it's active and can be rewritten
 		par->nb_backbuffers_full++;
 	}
 	//printk("f%d\n", par->nb_backbuffers_full);
@@ -689,7 +689,7 @@ static void fbtft_flip_backbuffer(struct fb_var_screeninfo *var, struct fb_info 
 	par->vmem_last_full_buf_idx = var->yoffset/fix->ypanstep;
 	par->vmem_cur_buf_idx = (par->vmem_last_full_buf_idx+1)%FBTFT_VMEM_BUFS;
 	//printk("vmem_last_full_buf_idx=%d, vmem_cur_buf_idx=%d\n", par->vmem_last_full_buf_idx, par->vmem_cur_buf_idx);
-	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS){
+	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS-1){  // -1 because one framebuffer is never "full" since it's active and can be rewritten
 		par->nb_backbuffers_full++;
 	}
 #endif //FBTFT_USE_BACK_BUFFERS_COPIES
@@ -708,9 +708,21 @@ void fbtft_set_vmem_buf(struct fbtft_par *par){
 #ifdef FBTFT_USE_BACK_BUFFERS_COPIES
 	// In case frame buffers are full (sync with FBIOPAN_DISPLAY ioctls)
 	if(par->nb_backbuffers_full > 0){
-		//printk("%d->0\n", par->nb_backbuffers_full);
-		par->nb_backbuffers_full=0; // 0 forced (no decrement here) since only the latest one is up to date
+		
+	//#define FBTFT_CLEAR_ALL_BACKBUFFERS
+	#ifdef FBTFT_CLEAR_ALL_BACKBUFFERS
+		//printk("%d full, idx last %d\n", par->nb_backbuffers_full, par->vmem_last_full_buf_idx);
 		par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
+		par->nb_backbuffers_full=0; // 0 forced (no decrement here) since only the latest one is up to date
+	#else //FBTFT_CLEAR_ALL_BACKBUFFERS
+		int vmem_oldest_full_buf_idx = par->vmem_last_full_buf_idx + 1 - par->nb_backbuffers_full;
+		if(vmem_oldest_full_buf_idx < 0) {
+			vmem_oldest_full_buf_idx = FBTFT_VMEM_BUFS+vmem_oldest_full_buf_idx;
+		}
+		//printk("%d full, idx last: %d, idx oldest: %d\n", par->nb_backbuffers_full, par->vmem_last_full_buf_idx, vmem_oldest_full_buf_idx);
+		par->vmem_ptr = par->vmem_back_buffers[vmem_oldest_full_buf_idx];
+		par->nb_backbuffers_full--;
+	#endif //FBTFT_CLEAR_ALL_BACKBUFFERS
 	}
 	// In case screen is not driven by FBIOPAN_DISPLAY ioctl, draw directly the framebuffer
 	else{
@@ -1220,14 +1232,14 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 
 	/* Limit fbtft_flip_backbuffer calls at par->freq_dma_transfers 
 	to avoid processing for nothing (less CPU overhead) */
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
+//#define FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
+#ifdef FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
+
 	static int last_nb_ioctl_calls_per_dma_transfers = 0;
 	static int idx_ioctl = 0;
 	int current_nb_ioctl_calls_per_dma_transfers = par->us_between_dma_transfers/par->us_between_ioctl_calls;
 	//int current_nb_ioctl_calls_per_dma_transfers = par->freq_ioctl_calls/par->freq_dma_transfers;
-	/*printk("cpt = %d, lcpt=%d\n", 
-		current_nb_ioctl_calls_per_dma_transfers, 
-		last_nb_ioctl_calls_per_dma_transfers);*/
+
 	if(last_nb_ioctl_calls_per_dma_transfers != current_nb_ioctl_calls_per_dma_transfers){
 		idx_ioctl = current_nb_ioctl_calls_per_dma_transfers-1;
 		last_nb_ioctl_calls_per_dma_transfers = current_nb_ioctl_calls_per_dma_transfers;
@@ -1237,9 +1249,17 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 		current_nb_ioctl_calls_per_dma_transfers >= 2 && 
 		idx_ioctl != 0
 		){
+
+		/* Debug */
+		printk("cpt = %d, lcpt=%d, us_dma=%d, us_ioctl=%d\n", 
+			current_nb_ioctl_calls_per_dma_transfers, 
+			last_nb_ioctl_calls_per_dma_transfers, 
+			par->us_between_dma_transfers,
+			par->us_between_ioctl_calls);
 		return -ENODEV; 
 	}
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
+
+#endif //FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
 
 	/* Frequency of ioctl(FBIOPAN_DISPLAY) actual processes */
 	static int count2 = 0;
@@ -2087,16 +2107,30 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	ts_now = ktime_get();
 	if(ts_now < par->ts_last_ioctl_call) par->ts_last_ioctl_call = ts_now; //overflow
 	int us_since_last_ioctl = (int)ktime_us_delta(ts_now, par->ts_last_ioctl_call);
+#define FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER	
+#ifdef FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER
 	if(	!par->nb_backbuffers_full &&
 		us_since_last_ioctl <= 1000000/MIN_FPS_WITHOUT_APPLICATIVE_TEARING &&
 		us_since_last_ioctl < (par->us_between_ioctl_calls*2) ){
+
+		// Debug
+		/*printk("%s exit IRQ_HANDLED. par->nb_backbuffers_full=%d, us_since_last_ioctl=%d, par->us_between_ioctl_calls=%d\n", 
+			__func__,
+			par->nb_backbuffers_full, 
+			us_since_last_ioctl, 
+			par->us_between_ioctl_calls);*/
+
+		// Exit
 		return IRQ_HANDLED;		
 	}
-	else if(us_since_last_ioctl > IOCTL_FREQ_SECS*1000000){
+#endif //FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER
+	
+	/* Reset ioctl frequency metrics here */	
+	if(us_since_last_ioctl > IOCTL_FREQ_SECS*1000000){
 		par->freq_ioctl_calls = 0;
 		par->freq_ioctl_processes = 0;
 	}
-	
+
 	/* Trigger new SPI transfer */
 	fbtft_start_new_screen_transfer_async(pdata->par);
 

@@ -17,6 +17,8 @@
 
 #include <linux/types.h>
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
 
 /* 
 Soft Matrix Rotation with only 1 pixel of extra RAM needed

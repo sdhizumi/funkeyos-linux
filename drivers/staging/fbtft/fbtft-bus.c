@@ -113,6 +113,7 @@ static int prev_write_line_end = -1;
 static int write_line_start = -1;
 static int write_line_end = -1;
 static bool lock = false;
+static ktime_t ts_lock;
 
 int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 {
@@ -136,7 +137,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 			ts_lock_disp_last_time = ts_now_lock;
 		if(ts_now_lock<ts_lock_disp_last_time) ts_lock_disp_last_time = ts_now_lock; // overflow
 
-		#define SECS_MAX_PRINT_TE_LOCK	10
+		#define SECS_MAX_PRINT_TE_LOCK	1
 		long delta_us_lock = ktime_us_delta(ts_now_lock, ts_lock_disp_last_time);
 		if( delta_us_lock > (SECS_MAX_PRINT_TE_LOCK*1000000) ){
 			pr_info("%s: Warning, TE too fast (%d interrupts not handled last %ld secs)\n", 
@@ -148,6 +149,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 		return -1;
 	}
 	lock = true;
+	ts_lock = ktime_get();
 
     /* Freq */
 #define SECS_SPI_ASYNC_FREQ		FBTFT_FREQ_UPDATE_SECS
@@ -351,7 +353,15 @@ static void spi_complete_data_write(void *arg)
 			fbtft_write_cmd_window_line(par);
 		}
 	} else {
+
+		/* Release lock */
 		lock = false;
+
+		/* Debug */
+		/*int us_to_complete_spi_transfer = (int)ktime_us_delta(ktime_get(), ts_lock);
+		printk("us: %d\n", us_to_complete_spi_transfer);*/
+
+		/* restart transfer if not driven by TE irq*/
 		if (!par->pdata->te_irq_enabled)
 			fbtft_start_new_screen_transfer_async(par);
 	}

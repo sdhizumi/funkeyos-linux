@@ -14,11 +14,10 @@
 
 #include "fbtft-utils.h"
 
-
 /* 
 Soft Matrix Rotation with only 1 pixel of extra RAM needed
-Works only on 2D square matrices
-Great CPU performance
+Works only on 2D square matrices (16bits/pixel)
+Great performance on small matrices
 */
 void fbtft_rotate_soft(u16 *mat, int size, int rotation)
 {
@@ -54,8 +53,7 @@ void fbtft_rotate_soft(u16 *mat, int size, int rotation)
 }
 
 /*  
-    Soft matrix transpose  
-    (dimensions multiple of 4, 16bits pixels)
+    Soft matrix transpose (16bits/pixel)
 */
 u8* fbtft_transpose_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
     
@@ -75,8 +73,7 @@ u8* fbtft_transpose_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
 }
 
 /*  
-    Soft inverse transpose
-    (dimensions multiple of 4, 16bits pixels)
+    Soft inverse transpose (16bits/pixel)
 */
 u8* fbtft_transpose_inv_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
     
@@ -96,8 +93,7 @@ u8* fbtft_transpose_inv_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
 }
 
 /*  
-    Soft matrix rotate 90° CW 
-    (dimensions multiple of 4, 16bits pixels)
+    Soft matrix rotate 90° CW (16bits/pixel)
 */
 u8* fbtft_rotate_90cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
     
@@ -117,8 +113,7 @@ u8* fbtft_rotate_90cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
 }
 
 /*  
-    Soft matrix rotate 270° CW
-    (dimensions multiple of 4, 16bits pixels)
+    Soft matrix rotate 270° CW (16bits/pixel)
 */
 u8* fbtft_rotate_270cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
     

@@ -59,6 +59,292 @@ static unsigned long debug;
 module_param(debug, ulong, 0000);
 MODULE_PARM_DESC(debug, "override device debug level");
 
+
+
+
+
+/*******************************
+ * 	TESTS ISP ROTATION
+ *******************************/
+#include <linux/dma-mapping.h>
+
+
+#define ISP_BASE_ADDR	0x01cb8000
+#define ROTATE_GLB_CTL			0x00
+#define ROTATE_GLB_CTL_START			BIT(31)
+#define ROTATE_GLB_CTL_RESET			BIT(30)
+#define ROTATE_GLB_CTL_BURST_LEN(x)		((x) << 16)
+#define ROTATE_GLB_CTL_HFLIP			BIT(7)
+#define ROTATE_GLB_CTL_VFLIP			BIT(6)
+#define ROTATE_GLB_CTL_ROTATION(x)		((x) << 4)
+#define ROTATE_GLB_CTL_MODE(x)			((x) << 0)
+
+#define ROTATE_INT			0x04
+#define ROTATE_INT_FINISH_IRQ_EN		BIT(16)
+#define ROTATE_INT_FINISH_IRQ			BIT(0)
+
+#define ROTATE_IN_FMT			0x20
+#define ROTATE_IN_FMT_FORMAT(x)			((x) << 0)
+
+#define ROTATE_IN_SIZE			0x24
+#define ROTATE_IN_PITCH0		0x30
+#define ROTATE_IN_PITCH1		0x34
+#define ROTATE_IN_PITCH2		0x38
+#define ROTATE_IN_ADDRL0		0x40
+#define ROTATE_IN_ADDRH0		0x44
+#define ROTATE_IN_ADDRL1		0x48
+#define ROTATE_IN_ADDRH1		0x4c
+#define ROTATE_IN_ADDRL2		0x50
+#define ROTATE_IN_ADDRH2		0x54
+#define ROTATE_OUT_SIZE			0x84
+#define ROTATE_OUT_PITCH0		0x90
+#define ROTATE_OUT_PITCH1		0x94
+#define ROTATE_OUT_PITCH2		0x98
+#define ROTATE_OUT_ADDRL0		0xA0
+#define ROTATE_OUT_ADDRH0		0xA4
+#define ROTATE_OUT_ADDRL1		0xA8
+#define ROTATE_OUT_ADDRH1		0xAC
+#define ROTATE_OUT_ADDRL2		0xB0
+#define ROTATE_OUT_ADDRH2		0xB4
+
+#define ROTATE_BURST_8			0x07
+#define ROTATE_BURST_16			0x0f
+#define ROTATE_BURST_32			0x1f
+#define ROTATE_BURST_64			0x3f
+
+#define ROTATE_MODE_COPY_ROTATE		0x01
+
+#define ROTATE_FORMAT_ARGB32		0x00
+#define ROTATE_FORMAT_ABGR32		0x01
+#define ROTATE_FORMAT_RGBA32		0x02
+#define ROTATE_FORMAT_BGRA32		0x03
+#define ROTATE_FORMAT_XRGB32		0x04
+#define ROTATE_FORMAT_XBGR32		0x05
+#define ROTATE_FORMAT_RGBX32		0x06
+#define ROTATE_FORMAT_BGRX32		0x07
+#define ROTATE_FORMAT_RGB24		0x08
+#define ROTATE_FORMAT_BGR24		0x09
+#define ROTATE_FORMAT_RGB565		0x0a
+#define ROTATE_FORMAT_BGR565		0x0b
+#define ROTATE_FORMAT_ARGB4444		0x0c
+#define ROTATE_FORMAT_ABGR4444		0x0d
+#define ROTATE_FORMAT_RGBA4444		0x0e
+#define ROTATE_FORMAT_BGRA4444		0x0f
+#define ROTATE_FORMAT_ARGB1555		0x10
+#define ROTATE_FORMAT_ABGR1555		0x11
+#define ROTATE_FORMAT_RGBA5551		0x12
+#define ROTATE_FORMAT_BGRA5551		0x13
+
+#define ROTATE_FORMAT_YUYV		0x20
+#define ROTATE_FORMAT_UYVY		0x21
+#define ROTATE_FORMAT_YVYU		0x22
+#define ROTATE_FORMAT_VYUV		0x23
+#define ROTATE_FORMAT_NV61		0x24
+#define ROTATE_FORMAT_NV16		0x25
+#define ROTATE_FORMAT_YUV422P		0x26
+#define ROTATE_FORMAT_NV21		0x28
+#define ROTATE_FORMAT_NV12		0x29
+#define ROTATE_FORMAT_YUV420P		0x2A
+
+#define ROTATE_SIZE(w, h)	(((h) - 1) << 16 | ((w) - 1))
+
+#define ROTATE_MIN_WIDTH	8U
+#define ROTATE_MIN_HEIGHT	8U
+#define ROTATE_MAX_WIDTH	4096U
+#define ROTATE_MAX_HEIGHT	4096U
+
+#define ROTATE_FLAG_YUV    BIT(0)
+#define ROTATE_FLAG_OUTPUT BIT(1)
+
+
+//#define KENEL_LEVEL_PRINT	KERN_EMERG
+#define KENEL_LEVEL_PRINT	
+
+struct rotate_format {
+	u32 fourcc;
+	u32 hw_format;
+	int planes;
+	int bpp[3];
+	int hsub;
+	int vsub;
+	unsigned int flags;
+};
+
+static inline u32 rotate_read(void * virt_addr, u32 reg)
+{
+	return readl(virt_addr + reg);
+}
+
+static inline void rotate_write(void * virt_addr, u32 reg, u32 value)
+{
+	writel(value, virt_addr + reg);
+}
+
+static inline void rotate_set_bits(void * virt_addr, u32 reg, u32 bits)
+{
+	writel(readl( virt_addr + reg ) | bits, virt_addr + reg );
+}
+
+#define AT(i, j)    ((i) * N + (j))
+static void disp4x4(u16 *pixels_4x4){
+    int N = 4;
+    printk(KENEL_LEVEL_PRINT "%d, %d, %d, %d\n", pixels_4x4[AT(0, 0)], pixels_4x4[AT(0, 1)], pixels_4x4[AT(0, 2)], pixels_4x4[AT(0, 3)]);
+    printk(KENEL_LEVEL_PRINT "%d, %d, %d, %d\n", pixels_4x4[AT(1, 0)], pixels_4x4[AT(1, 1)], pixels_4x4[AT(1, 2)], pixels_4x4[AT(1, 3)]);
+    printk(KENEL_LEVEL_PRINT "%d, %d, %d, %d\n", pixels_4x4[AT(2, 0)], pixels_4x4[AT(2, 1)], pixels_4x4[AT(2, 2)], pixels_4x4[AT(2, 3)]);
+    printk(KENEL_LEVEL_PRINT "%d, %d, %d, %d\n", pixels_4x4[AT(3, 0)], pixels_4x4[AT(3, 1)], pixels_4x4[AT(3, 2)], pixels_4x4[AT(3, 3)]);
+}
+
+static bool is_matrix_empty(u8 * mat, int pitch, int h){
+	int i;
+	for(i=0; i<h*pitch; i++){
+		if(mat[i])
+			return false;
+	}
+	return true;
+}
+
+
+#define ROT_TEST_WIDTH		240
+#define ROT_TEST_HEIGHT		240
+static void __iomem *isp_virt_addr;
+dma_addr_t addr_src[3];
+dma_addr_t addr_dst[3];
+static u16 *src_rot;
+static u16 *dst_rot;
+static void rotate_device_run(void)
+{
+
+	/* Vars */
+	u32 val, pitch[3];
+	pitch[0] = ROT_TEST_WIDTH*2;
+	pitch[1] = pitch[0]; pitch[2] = pitch[0];
+
+    printk(KENEL_LEVEL_PRINT "\n%s\n", __func__);
+
+
+	/* Start rotation */
+	val = ROTATE_GLB_CTL_MODE(ROTATE_MODE_COPY_ROTATE);
+	/*if (ctx->hflip)
+		val |= ROTATE_GLB_CTL_HFLIP;
+	if (ctx->vflip)
+		val |= ROTATE_GLB_CTL_VFLIP;*/
+	const int rotation = 270;
+	val |= ROTATE_GLB_CTL_ROTATION(rotation / 90);
+	if (rotation != 90 && rotation != 270)
+		val |= ROTATE_GLB_CTL_BURST_LEN(ROTATE_BURST_64);
+	else
+		val |= ROTATE_GLB_CTL_BURST_LEN(ROTATE_BURST_8);
+	rotate_write(isp_virt_addr, ROTATE_GLB_CTL, val);
+
+	/*fmt = rotate_find_format(ctx->src_fmt.pixelformat);
+	if (!fmt)
+		return;*/
+	rotate_write(isp_virt_addr, ROTATE_IN_FMT, ROTATE_IN_FMT_FORMAT(ROTATE_FORMAT_RGB565));
+
+	/*rotate_calc_addr_pitch(vb2_dma_contig_plane_dma_addr(&src->vb2_buf, 0),
+			       ctx->src_fmt.bytesperline, ctx->src_fmt.height,
+			       fmt, addr, pitch);*/
+
+	rotate_write(isp_virt_addr, ROTATE_IN_SIZE,
+		     ROTATE_SIZE(ROT_TEST_WIDTH, ROT_TEST_HEIGHT));
+
+	rotate_write(isp_virt_addr, ROTATE_IN_PITCH0, pitch[0]);
+	rotate_write(isp_virt_addr, ROTATE_IN_PITCH1, pitch[1]);
+	rotate_write(isp_virt_addr, ROTATE_IN_PITCH2, pitch[2]);
+
+	rotate_write(isp_virt_addr, ROTATE_IN_ADDRL0, addr_src[0]);
+	rotate_write(isp_virt_addr, ROTATE_IN_ADDRL1, addr_src[1]);
+	rotate_write(isp_virt_addr, ROTATE_IN_ADDRL2, addr_src[2]);
+
+	rotate_write(isp_virt_addr, ROTATE_IN_ADDRH0, 0);
+	rotate_write(isp_virt_addr, ROTATE_IN_ADDRH1, 0);
+	rotate_write(isp_virt_addr, ROTATE_IN_ADDRH2, 0);
+
+
+
+	/*fmt = rotate_find_format(ctx->dst_fmt.pixelformat);
+	if (!fmt)
+		return;
+	rotate_calc_addr_pitch(vb2_dma_contig_plane_dma_addr(&dst->vb2_buf, 0),
+			       ctx->dst_fmt.bytesperline, ctx->dst_fmt.height,
+			       fmt, addr, pitch);*/
+
+	rotate_write(isp_virt_addr, ROTATE_OUT_SIZE,
+		     ROTATE_SIZE(ROT_TEST_WIDTH, ROT_TEST_HEIGHT));
+
+	rotate_write(isp_virt_addr, ROTATE_OUT_PITCH0, pitch[0]);
+	rotate_write(isp_virt_addr, ROTATE_OUT_PITCH1, pitch[1]);
+	rotate_write(isp_virt_addr, ROTATE_OUT_PITCH2, pitch[2]);
+
+	rotate_write(isp_virt_addr, ROTATE_OUT_ADDRL0, addr_dst[0]);
+	rotate_write(isp_virt_addr, ROTATE_OUT_ADDRL1, addr_dst[1]);
+	rotate_write(isp_virt_addr, ROTATE_OUT_ADDRL2, addr_dst[2]);
+
+	rotate_write(isp_virt_addr, ROTATE_OUT_ADDRH0, 0);
+	rotate_write(isp_virt_addr, ROTATE_OUT_ADDRH1, 0);
+	rotate_write(isp_virt_addr, ROTATE_OUT_ADDRH2, 0);
+
+	rotate_set_bits(isp_virt_addr, ROTATE_INT, ROTATE_INT_FINISH_IRQ_EN);
+	rotate_set_bits(isp_virt_addr, ROTATE_GLB_CTL, ROTATE_GLB_CTL_START);
+
+
+	// Wait to see results
+/*#define DELAY_NOP	5500000
+#ifdef DELAY_NOP
+	int i;
+	for ( i = 0; i < DELAY_NOP; i++)
+		asm("nop");
+#endif*/
+
+	// Print results
+    /*printk(KENEL_LEVEL_PRINT "\nsrc block 4x4 at \n");
+    disp4x4(src_rot);*/
+    printk(KENEL_LEVEL_PRINT "src is %s empty\n", 
+    	is_matrix_empty((u8*)src_rot, ROT_TEST_WIDTH*2, ROT_TEST_HEIGHT)?"":"not");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 int fbtft_write_buf_dc(struct fbtft_par *par, void *buf, size_t len, int dc)
 {
 	int ret;
@@ -1402,6 +1688,94 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		disp_height = display->height;
 	}
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	/* TESTS ROTATION */
+	/* Allocate ISP physical address */
+	isp_virt_addr = ioremap(ISP_BASE_ADDR, 0x1000);
+	if (!isp_virt_addr){
+		printk(KERN_EMERG "Cannot map ISP phy addr\n");
+		return -ENOMEM;
+	}
+
+
+	/* Allocate dummy src */
+	printk(KENEL_LEVEL_PRINT  "%s, l.%d: dma_alloc_coherent src\n", __func__, __LINE__);
+	//dma_addr_t src_dma_addr = NULL;
+	
+	src_rot = (u16*)dma_alloc_coherent(NULL, ROT_TEST_WIDTH*ROT_TEST_HEIGHT*2, &addr_src[0], GFP_KERNEL );
+	if(!src_rot){
+		printk(KERN_EMERG "Cannot allocate src dma_alloc_coherent mem\n");
+		return;
+	}
+	addr_src[1] = addr_src[0]; addr_src[2] = addr_src[0];
+	/*u16 src_tmp[ROT_TEST_WIDTH*ROT_TEST_HEIGHT] = {
+		0,1,2,3,
+		4,5,6,7,
+		8,9,10,11,
+		12,13,14,15
+    };
+    memcpy(src_rot, src_tmp, ROT_TEST_WIDTH*ROT_TEST_HEIGHT*2);*/
+    memset((u8*)src_rot, 1, ROT_TEST_WIDTH*ROT_TEST_HEIGHT*2);
+
+
+    /* Allocate dummy dst */
+	printk(KENEL_LEVEL_PRINT "%s, l.%d: dma_alloc_coherent dst\n", __func__, __LINE__);
+	dst_rot = (u16*)dma_alloc_coherent(NULL, ROT_TEST_WIDTH*ROT_TEST_HEIGHT*2, &addr_dst[0], GFP_KERNEL );
+	if(!dst_rot){
+		printk(KENEL_LEVEL_PRINT "Cannot allocate dst dma_alloc_coherent mem\n");
+		return;
+	}
+	addr_dst[1] = addr_dst[0]; addr_dst[2] = addr_dst[0];
+	memset((u8*)dst_rot, 0, ROT_TEST_WIDTH*ROT_TEST_HEIGHT*2);
+
+	printk(KENEL_LEVEL_PRINT "TEST ROTATION\n");
+	rotate_device_run();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	vmem_size = width * height * bpp / 8;
 	//vmem = devm_kzalloc(dev, vmem_size, GFP_KERNEL); // TRAP. Managed kzalloc. Memory allocated with this function is automatically freed on driver detach
 	//vmem = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
@@ -2046,6 +2420,27 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 #endif //DEBUG_TE_IRQ_FREQ
 		te_count = 0;
 		prev_ts = ts_now;
+
+
+
+		#warning to remove:
+	    //printk(KENEL_LEVEL_PRINT "\ndst block 4x4 at \n");
+	    //disp4x4(dst_rot);
+
+	    unsigned int val = rotate_read(isp_virt_addr, ROTATE_INT);
+		if (!(val & ROTATE_INT_FINISH_IRQ)){
+			printk(KENEL_LEVEL_PRINT "irq not finished\n");
+		}
+		else{
+			printk(KENEL_LEVEL_PRINT "**************** irq finished\n");
+		}
+
+		/* clear flag and disable irq */
+		rotate_write(isp_virt_addr, ROTATE_INT, ROTATE_INT_FINISH_IRQ);
+
+    	printk(KENEL_LEVEL_PRINT "dst is %s empty\n", 
+    		is_matrix_empty((u8*)dst_rot, ROT_TEST_WIDTH*2, ROT_TEST_HEIGHT)?"":"not");
+	    rotate_device_run();	
 	}
 
 	/* Sanity check: SPI still transfering data */

@@ -28,7 +28,7 @@
 
 /* Nb of framebuffers */
 #ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	#define FBTFT_VMEM_BUFS						5 	// Minimum 2
+	#define FBTFT_VMEM_BUFS						3 	// Minimum 2
 #else  //FBTFT_USE_BACK_BUFFERS_COPIES
 	#define FBTFT_VMEM_BUFS						3 	// Minimum 2
 #endif //FBTFT_USE_BACK_BUFFERS_COPIES

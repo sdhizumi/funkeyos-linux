@@ -603,8 +603,15 @@ static void fbtft_flip_backbuffer(struct fb_var_screeninfo *var, struct fb_info 
 	struct fbtft_par *par = info->par;
 
 #ifdef FBTFT_USE_BACK_BUFFERS_COPIES
+
+    /* Debug */
+    //fbtft_time_toc(",hid1", false);
+	
 	/* Add HID */
 	u8 *vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_postprocess_hid);
+
+    /* Debug */
+    //fbtft_time_toc(",hid2", false);
 	
 	/* Rotate and copy to backbuffer */
 	if (par->pdata->rotate_soft == 270){
@@ -632,9 +639,15 @@ static void fbtft_flip_backbuffer(struct fb_var_screeninfo *var, struct fb_info 
 		kernel_neon_end();
 		preempt_enable();
 	#else //not defined FBTFT_NEON_OPTIMS
+
+	    /* Debug */
+	    fbtft_time_toc(ROTATION_STARTED, par->vmem_cur_buf_idx, false);
+
 		fbtft_rotate_270cw_soft( vmem, 
 			par->vmem_back_buffers[par->vmem_cur_buf_idx],
 			par->info->var.xres, par->info->var.yres);
+
+	    fbtft_time_toc(ROTATION_ENDED, par->vmem_cur_buf_idx, false);
 	#endif //FBTFT_NEON_OPTIMS
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
@@ -706,6 +719,10 @@ FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface).
 void fbtft_set_vmem_buf(struct fbtft_par *par){
 
 #ifdef FBTFT_USE_BACK_BUFFERS_COPIES
+
+	/*#warning remove this
+	par->nb_backbuffers_full=1;*/
+
 	// In case frame buffers are full (sync with FBIOPAN_DISPLAY ioctls)
 	if(par->nb_backbuffers_full > 0){
 		
@@ -720,6 +737,10 @@ void fbtft_set_vmem_buf(struct fbtft_par *par){
 			vmem_oldest_full_buf_idx = FBTFT_VMEM_BUFS+vmem_oldest_full_buf_idx;
 		}
 		//printk("%d full, idx last: %d, idx oldest: %d\n", par->nb_backbuffers_full, par->vmem_last_full_buf_idx, vmem_oldest_full_buf_idx);
+
+	    /* Debug */
+	    fbtft_time_toc(SET_VIDEO_BUF, vmem_oldest_full_buf_idx, false);
+
 		par->vmem_ptr = par->vmem_back_buffers[vmem_oldest_full_buf_idx];
 		par->nb_backbuffers_full--;
 	#endif //FBTFT_CLEAR_ALL_BACKBUFFERS
@@ -1231,7 +1252,8 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 	}
 
 	/* Limit fbtft_flip_backbuffer calls at par->freq_dma_transfers 
-	to avoid processing for nothing (less CPU overhead) */
+	to avoid processing for nothing in some cases. 
+	Not needed if defined(FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER) */
 //#define FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
 #ifdef FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
 
@@ -1284,6 +1306,12 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 		count2 = 0;
 		ts_earlier_adapted = ts_now;
 	}
+
+	/* Blocking wait for new transfer */
+	/*if (par->pdata->te_irq_enabled && par->ready_for_spi_async){
+		while(par->nb_ioctl_during_dma_spi_tx){};
+		par->nb_ioctl_during_dma_spi_tx++;
+	}*/
 
 	/* Process current framebuffer */
 	fbtft_flip_backbuffer(var, info);
@@ -2095,7 +2123,7 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 		prev_ts = ts_now;
 	}
 
-	/* Sanity check: SPI still transfering data */
+	/* Sanity check: SPI data transfer not initialized yet */
 	if(!par->ready_for_spi_async){
 		return IRQ_HANDLED;
 	}

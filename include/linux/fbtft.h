@@ -265,8 +265,8 @@ struct fbtft_par {
 	bool force_post_process;
 	
 	/* While info->var.xres and info->var.yres 
-	save the visible resolution infomation, these variables 
-	save the full driver resolution. 
+	store the visible resolution information, these variables 
+	store the full driver resolution. 
 	Used when the display's visible resolution is 
 	smaller than the one for a given driver. 
 	(Funkey S is 240x240 but st7789 driver default is 320x240)
@@ -316,6 +316,7 @@ struct fbtft_par {
 	int us_between_ioctl_calls;
 	ktime_t ts_last_ioctl_call;
 	int freq_ioctl_processes;
+	u8 nb_ioctl_during_dma_spi_tx;
 	int freq_te;
 	int freq_dma_transfers;
 	int us_between_dma_transfers;
@@ -364,6 +365,39 @@ int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
 void fbtft_set_vmem_buf(struct fbtft_par *par);
+
+/* fbtft-utils.h */
+#define FBTFT_DEBUG_TIME_TRIGGERS \
+	X(SET_VIDEO_BUF, "]--------[SET_VIDEO_BUF", "]   [Svb") \
+	X(CALLING_SPI_ASYNC, "CALLING_SPI_ASYNC", "spiC") \
+	X(DMA_TRANSFER_STARTED, "DMA_TRANSFER_STARTED", "dmaS") \
+	X(DMA_TRANSFER_ENDED, "DMA_TRANSFER_ENDED", "dmaE") \
+	X(ROTATION_STARTED, "ROTATION_STARTED", "rotS") \
+	X(ROTATION_ENDED, "ROTATION_ENDED", "rotE") \
+	X(TE_INT_WHEN_SPI_LOCKED, "TE_INT_WHEN_SPI_LOCKED", "LOCK") \
+	X(MUTEX_LOCK, "MUTEX_LOCK", "ml") \
+	X(MUTEX_RELEASE, "MUTEX_RELEASE", "mr") \
+	X(FBTFT_NB_DEBUG_TIME_TRIGGERS, "_", "_") 
+
+#undef X
+#define X(a,b,c) a,
+typedef enum {FBTFT_DEBUG_TIME_TRIGGERS} E_FBTFT_DEBUG_TIME_TRIGGERS;
+
+#define FBTFT_NO_TIME_INDEX 0xCAFEDECA
+
+#define FBTFT_DEBUG_TIME
+#ifdef FBTFT_DEBUG_TIME
+	void __fbtft_time_tic(void);
+	void __fbtft_time_toc(E_FBTFT_DEBUG_TIME_TRIGGERS trigger, int index, bool print_now);
+	void __fbtft_time_dump(bool short_trigger_name);
+	#define fbtft_time_tic(...) __fbtft_time_tic(__VA_ARGS__)
+	#define fbtft_time_toc(...) __fbtft_time_toc(__VA_ARGS__)
+	#define fbtft_time_dump(...) __fbtft_time_dump(true)
+#else //FBTFT_DEBUG_TIME
+	#define fbtft_time_tic(...) 
+	#define fbtft_time_toc(...) 
+	#define fbtft_time_dump(...) 
+#endif //FBTFT_DEBUG_TIME
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);

@@ -188,7 +188,7 @@
 		if need to surcharge default dimensions
 		*/
 		//width = <240>;
-		height = <240>;	// FunKey S
+		//height = <240>;	// FunKey S
 		
 		/* SPI freq 
 		- 62.5Mhz = max theoritical frequency 
@@ -204,6 +204,7 @@
 		//spi-max-frequency = <60000000>;
 		//spi-max-frequency = <62500000>;
 		spi-max-frequency = <75000000>;
+		//spi-max-frequency = <85000000>;
 		spi_async_mode = "true";
 
 		//txbuflen = <115202>; // 240x240x2 Not needed in async mode

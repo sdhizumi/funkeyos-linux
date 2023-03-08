@@ -26,6 +26,8 @@
 
 #include <linux/spi/spi.h>
 
+#include <linux/fbtft.h>
+
 #define SUN6I_FIFO_DEPTH		128
 #define SUN8I_FIFO_DEPTH		64
 
@@ -269,10 +271,23 @@ static int sun6i_spi_wait_for_transfer(struct spi_device *spi,
 	unsigned int timeout;
 
 	/* smart wait for completion */
+
+	/*unsigned long long ms = 1;
+	ms = 8LL * 1000LL * tfr->len;
+	do_div(ms, tfr->speed_hz);
+	ms += ms + 200; /* some tolerance */
+
 	tx_time = max(tfr->len * 8 * 2 / (tfr->speed_hz / 1000), 100U);
 	start = jiffies;
 	timeout = wait_for_completion_timeout(&master->xfer_completion,
 					      msecs_to_jiffies(tx_time));
+	
+	/* Debug */
+	//fbtft_time_toc(", w1", false);
+	//printk("%d:%d", tx_time, msecs_to_jiffies(tx_time));
+
+	/*timeout = wait_for_completion_timeout(&master->xfer_completion,
+					      msecs_to_jiffies(ms));*/
 	end = jiffies;
 	if (!timeout) {
 		dev_warn(&master->dev,
@@ -355,8 +370,15 @@ static int sun6i_spi_transfer_one_dma(struct spi_device *spi,
 
 	dev_dbg(&master->dev, "Using DMA mode for transfer\n");
 
+	/* Debug */
+	//fbtft_time_toc(", d1", false);
+
 	reg = sun6i_spi_read(sspi, SUN6I_FIFO_CTL_REG);
 
+	/* Debug */
+	//fbtft_time_toc(", d2", false);
+
+	/////////// 22us here:
 	if (sspi->tx_buf) {
 		ret = sun6i_spi_dmap_prep_tx(master, tfr, &tx_cookie);
 		if (ret)
@@ -368,6 +390,10 @@ static int sun6i_spi_transfer_one_dma(struct spi_device *spi,
 		reg &= ~SUN6I_FIFO_CTL_TF_ERQ_TRIG_LEVEL_MASK;
 		reg |= (trig_level << SUN6I_FIFO_CTL_TF_ERQ_TRIG_LEVEL_POS);
 	}
+	/////////////////////
+
+	/* Debug */
+	//fbtft_time_toc(", d3", false);
 
 	if (sspi->rx_buf) {
 		ret = sun6i_spi_dmap_prep_rx(master, tfr, &rx_cookie);
@@ -385,25 +411,46 @@ static int sun6i_spi_transfer_one_dma(struct spi_device *spi,
 	sun6i_spi_write(sspi, SUN6I_FIFO_CTL_REG,
 			reg | SUN6I_FIFO_CTL_DMA_DEDICATE);
 
+	/* Debug */
+	//fbtft_time_toc(", d4", false);
+
 	/* Start transfer */
 	sun6i_spi_set(sspi, SUN6I_TFR_CTL_REG, SUN6I_TFR_CTL_XCH);
+
+	/* Debug */
+	fbtft_time_toc(DMA_TRANSFER_STARTED, FBTFT_NO_TIME_INDEX, false);
+//	fbtft_time_tic();
 
 	ret = sun6i_spi_wait_for_transfer(spi, tfr);
 	if (ret)
 		goto out;
+
+	fbtft_time_toc(DMA_TRANSFER_ENDED, FBTFT_NO_TIME_INDEX, false);
+
+	/* Debug */
+	//fbtft_time_toc(", d6", false);
 
 	if (sspi->tx_buf && (status = dma_async_is_tx_complete(master->dma_tx,
 			tx_cookie, NULL, NULL))) {
 		dev_warn(&master->dev,
 			"DMA returned completion status of: %s\n",
 			status == DMA_ERROR ? "error" : "in progress");
+
+		/* Debug */
+		//fbtft_time_toc(", d61", false);
 	}
 	if (sspi->rx_buf && (status = dma_async_is_tx_complete(master->dma_rx,
 			rx_cookie, NULL, NULL))) {
 		dev_warn(&master->dev,
 			"DMA returned completion status of: %s\n",
 			status == DMA_ERROR ? "error" : "in progress");
+
+		/* Debug */
+		//fbtft_time_toc(", d62", false);
 	}
+	
+	/* Debug */
+	//fbtft_time_toc(", d7", false);
 
 out:
 	if (ret) {
@@ -473,12 +520,21 @@ static int sun6i_spi_transfer_one(struct spi_master *master,
 	sspi->rx_buf = tfr->rx_buf;
 	sspi->len = tfr->len;
 
+	/* Debug */
+	//fbtft_time_toc(", tr1", false);
+
 	/* Clear pending interrupts */
 	sun6i_spi_write(sspi, SUN6I_INT_STA_REG, ~0);
+
+	/* Debug */
+	//fbtft_time_toc(", tr2", false);
 
 	/* Reset FIFO */
 	sun6i_spi_write(sspi, SUN6I_FIFO_CTL_REG,
 			SUN6I_FIFO_CTL_RF_RST | SUN6I_FIFO_CTL_TF_RST);
+
+	/* Debug */
+	//fbtft_time_toc(", tr3", false);
 
 	/*
 	 * If it's a TX only transfer, we don't want to fill the RX
@@ -489,6 +545,9 @@ static int sun6i_spi_transfer_one(struct spi_master *master,
 	else
 		sun6i_spi_set(sspi, SUN6I_TFR_CTL_REG, SUN6I_TFR_CTL_DHB);
 
+	/* Debug */
+	//fbtft_time_toc(", tr4", false);
+
 
 	/* Ensure that we have a parent clock fast enough */
 	mclk_rate = clk_get_rate(sspi->mclk);
@@ -496,6 +555,9 @@ static int sun6i_spi_transfer_one(struct spi_master *master,
 		clk_set_rate(sspi->mclk, 2 * tfr->speed_hz);
 		mclk_rate = clk_get_rate(sspi->mclk);
 	}
+
+	/* Debug */
+	//fbtft_time_toc(", tr5", false);
 
 	/*
 	 * Setup clock divider.
@@ -524,6 +586,9 @@ static int sun6i_spi_transfer_one(struct spi_master *master,
 
 	sun6i_spi_write(sspi, SUN6I_CLK_CTL_REG, reg);
 
+	/* Debug */
+	//fbtft_time_toc(", tr6", false);
+
 	/* Setup the transfer now... */
 	if (sspi->tx_buf)
 		tx_len = tfr->len;
@@ -534,8 +599,19 @@ static int sun6i_spi_transfer_one(struct spi_master *master,
 	sun6i_spi_write(sspi, SUN6I_BURST_CTL_CNT_REG,
 			SUN6I_BURST_CTL_CNT_STC(tx_len));
 
-	if (sun6i_spi_can_dma(master, spi, tfr))
+	/* Debug */
+	//fbtft_time_toc(", tr7", false);
+
+	if (sun6i_spi_can_dma(master, spi, tfr)){
+
+		/* Debug */
+		//fbtft_time_toc(", tr8", false);
+		
 		return sun6i_spi_transfer_one_dma(spi, tfr);
+	}
+
+	/* Debug */
+	//fbtft_time_toc(", tr9", false);
 
 	return sun6i_spi_transfer_one_pio(spi, tfr);
 }

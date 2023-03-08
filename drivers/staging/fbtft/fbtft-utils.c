@@ -13,7 +13,25 @@
  */
 
 #include "fbtft-utils.h"
+#include <linux/fbtft.h>
 
+#define NB_DEBUG_TIME_VALS  30
+#undef X
+#define X(a,b,c) b,
+const char * fbtft_debug_time_triggers_long_str[] = {FBTFT_DEBUG_TIME_TRIGGERS};
+#undef X
+#define X(a,b,c) c,
+const char * fbtft_debug_time_triggers_short_str[] = {FBTFT_DEBUG_TIME_TRIGGERS};
+
+static ktime_t ts_now = 0;
+static u32 idx_debug_time = 0;
+typedef struct {
+    u32                             delta_us;
+    E_FBTFT_DEBUG_TIME_TRIGGERS     trigger;
+    int                             index;
+} S_FBTFT_TOC;
+
+static S_FBTFT_TOC toc_events[NB_DEBUG_TIME_VALS] = {0};
 
 /* 
 Soft Matrix Rotation with only 1 pixel of extra RAM needed
@@ -135,4 +153,124 @@ u8* fbtft_rotate_270cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
     }
 
     return vmem_dst;
+}
+
+
+
+
+/*
+    Debug function to restart stopwatch
+*/
+void __fbtft_time_tic(void){
+    ts_now = ktime_get();
+}
+
+/*
+    Debug function to store stopwatch current count
+    trigger = event for which time needs to be stored
+    index = additional index info, use FBTFT_NO_TIME_INDEX if meant to be left empty
+    print_now = display result now
+*/
+void __fbtft_time_toc(E_FBTFT_DEBUG_TIME_TRIGGERS trigger, int index, bool print_now){
+    
+    /* Get delta in us */
+    u32 delta_us = ktime_us_delta(ktime_get(), ts_now);
+
+    /* Sanity check */
+    u32 real_trigger = trigger;
+    if(trigger > FBTFT_NB_DEBUG_TIME_TRIGGERS){
+        trigger = FBTFT_NB_DEBUG_TIME_TRIGGERS;
+    }
+
+    /* Print now */
+    if(print_now){
+        printk("toc(%d: %s) = %dus\n", real_trigger, fbtft_debug_time_triggers_short_str[trigger], delta_us);
+    }
+
+    /* Store trigger infos */
+    toc_events[idx_debug_time] = (S_FBTFT_TOC){
+        .delta_us = delta_us, 
+        .trigger = trigger,
+        .index = index
+    };
+
+    /* Next index */
+    idx_debug_time = (idx_debug_time+1)%NB_DEBUG_TIME_VALS;
+}
+
+/*
+    Debug function to dump stored times (short trigger names)
+*/
+void __fbtft_time_dump(bool short_trigger_name){
+
+    /* Vars */
+    int i, cnt = 0;
+    int idx = idx_debug_time%NB_DEBUG_TIME_VALS;
+
+    /* Get string size */
+    for(i=0; i<NB_DEBUG_TIME_VALS; i++){
+        int val;
+
+        /* Delta us size */
+        val = toc_events[idx].delta_us/10;
+        while (val){
+            cnt++;
+            val /= 10;
+        }
+        cnt++;
+        
+        /* Trigger name size */
+        if(short_trigger_name){
+            cnt += strlen(fbtft_debug_time_triggers_short_str[toc_events[idx].trigger]);
+        }
+        else{
+            cnt += strlen(fbtft_debug_time_triggers_long_str[toc_events[idx].trigger]);   
+        }
+
+        /* Index size */
+        if(toc_events[idx].index != FBTFT_NO_TIME_INDEX){
+            val = toc_events[idx].index/10;
+            while (val){
+                cnt++;
+                val /= 10;
+            }
+            cnt += (toc_events[idx].index < 0)?1:0;
+        }
+
+        /* padding for ", "":"  and extra */
+        cnt += 5;
+
+        /* Next idx */ 
+        idx = (idx+1)%NB_DEBUG_TIME_VALS;
+    }
+    //printk("cnt = %d", cnt);
+
+    /* Declare string (in stack) */
+    char dump_str[cnt+1]; // +1 for string termination
+    dump_str[0] = 0;
+
+    /* Print String */
+    for(i=0; i<NB_DEBUG_TIME_VALS; i++){
+
+        /* Concatenate event*/
+        if(toc_events[idx].index == FBTFT_NO_TIME_INDEX){
+            sprintf(dump_str+strlen(dump_str), "%s:%d, ", 
+                    short_trigger_name ? fbtft_debug_time_triggers_short_str[toc_events[idx].trigger] : fbtft_debug_time_triggers_long_str[toc_events[idx].trigger],
+                    toc_events[idx].delta_us
+            );
+        }
+        else{
+            sprintf(dump_str+strlen(dump_str), "%s_%d:%d, ", 
+                    short_trigger_name ? fbtft_debug_time_triggers_short_str[toc_events[idx].trigger] : fbtft_debug_time_triggers_long_str[toc_events[idx].trigger],
+                    toc_events[idx].index,
+                    toc_events[idx].delta_us
+            );
+        }
+
+        /* Next idx */ 
+        idx = (idx+1)%NB_DEBUG_TIME_VALS;
+    }
+
+    /* Print string */ 
+    printk(dump_str);
 }

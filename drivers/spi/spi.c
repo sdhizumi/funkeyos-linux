@@ -43,6 +43,10 @@
 #include <linux/idr.h>
 #include <linux/platform_data/x86/apple.h>
 
+
+#warning remove this:
+#include <linux/fbtft.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/spi.h>
 
@@ -1013,6 +1017,10 @@ static int spi_transfer_one_message(struct spi_controller *ctlr,
 	struct spi_statistics *statm = &ctlr->statistics;
 	struct spi_statistics *stats = &msg->spi->statistics;
 
+
+	/* Debug */
+	//fbtft_time_toc(", t1", false);
+
 	spi_set_cs(msg->spi, true);
 
 	SPI_STATISTICS_INCREMENT_FIELD(statm, messages);
@@ -1027,6 +1035,9 @@ static int spi_transfer_one_message(struct spi_controller *ctlr,
 		if (xfer->tx_buf || xfer->rx_buf) {
 			reinit_completion(&ctlr->xfer_completion);
 
+			/* Debug */
+			//fbtft_time_toc(", t2", false);
+
 			ret = ctlr->transfer_one(ctlr, msg->spi, xfer);
 			if (ret < 0) {
 				SPI_STATISTICS_INCREMENT_FIELD(statm,
@@ -1037,6 +1048,9 @@ static int spi_transfer_one_message(struct spi_controller *ctlr,
 					"SPI transfer failed: %d\n", ret);
 				goto out;
 			}
+
+			/* Debug */
+			//fbtft_time_toc(", t3", false);
 
 			if (ret > 0) {
 				ret = 0;
@@ -1050,6 +1064,9 @@ static int spi_transfer_one_message(struct spi_controller *ctlr,
 				ms = wait_for_completion_timeout(&ctlr->xfer_completion,
 								 msecs_to_jiffies(ms));
 			}
+
+			/* Debug */
+			//fbtft_time_toc(", t4", false);
 
 			if (ms == 0) {
 				SPI_STATISTICS_INCREMENT_FIELD(statm,
@@ -1068,6 +1085,9 @@ static int spi_transfer_one_message(struct spi_controller *ctlr,
 		}
 
 		trace_spi_transfer_stop(msg, xfer);
+
+		/* Debug */
+		//fbtft_time_toc(", t5", false);
 
 		if (msg->status != -EINPROGRESS)
 			goto out;
@@ -1144,6 +1164,9 @@ static void __spi_pump_messages(struct spi_controller *ctlr, bool in_kthread)
 	unsigned long flags;
 	bool was_busy = false;
 	int ret;
+
+	/* Debug */
+	//fbtft_time_toc(", p1", false);
 
 	/* Lock queue */
 	spin_lock_irqsave(&ctlr->queue_lock, flags);
@@ -1259,6 +1282,9 @@ static void __spi_pump_messages(struct spi_controller *ctlr, bool in_kthread)
 		spi_finalize_current_message(ctlr);
 		goto out;
 	}
+
+	/* Debug */
+	//fbtft_time_toc(", p2", false);
 
 	ret = ctlr->transfer_one_message(ctlr, ctlr->cur_msg);
 	if (ret) {
@@ -1479,8 +1505,13 @@ static int __spi_queued_transfer(struct spi_device *spi,
 	msg->status = -EINPROGRESS;
 
 	list_add_tail(&msg->queue, &ctlr->queue);
-	if (!ctlr->busy && need_pump)
+	if (!ctlr->busy && need_pump){
+
+	    /* Debug */
+	    //fbtft_time_toc(", k", false);
+
 		kthread_queue_work(&ctlr->kworker, &ctlr->pump_messages);
+	}
 
 	spin_unlock_irqrestore(&ctlr->queue_lock, flags);
 	return 0;

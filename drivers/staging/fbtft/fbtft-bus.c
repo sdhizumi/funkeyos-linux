@@ -123,8 +123,16 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	if (par->pdata->te_irq_enabled && !par->ready_for_spi_async)
 		return -1;
 
+	/* Debug */
+	static bool dump_time = false;
+
 	/* Received TE interrupt, but still handling previous transfer */
 	if (lock){
+
+	    /* Debug */
+	    fbtft_time_toc(TE_INT_WHEN_SPI_LOCKED, FBTFT_NO_TIME_INDEX, false);
+	    dump_time = true;
+
 /* Debug TE overflows */
 //#define TE_OVERFLOW_DEBUG
 #ifdef TE_OVERFLOW_DEBUG
@@ -146,10 +154,24 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 			lock_cnt = 0;
 		}
 #endif //TE_OVERFLOW_DEBUG
+
 		return -1;
 	}
 	lock = true;
 	ts_lock = ktime_get();
+
+    /* Debug */
+    if(dump_time){
+	    dump_time = false;
+    	
+    	static int cnt_dump_asked = 0;
+    	cnt_dump_asked++;
+    	if(cnt_dump_asked == 10){
+    		cnt_dump_asked = 0;
+	    	fbtft_time_dump();
+		}
+    }
+    fbtft_time_tic();
 
     /* Freq */
 #define SECS_SPI_ASYNC_FREQ		FBTFT_FREQ_UPDATE_SECS
@@ -171,10 +193,10 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	if( delta_us > SECS_SPI_ASYNC_FREQ*1000000){
 		//par->freq_dma_transfers = count*1000000/delta_us; // floored value
 		par->freq_dma_transfers = (2*count*1000000+delta_us) / (2*delta_us); // rounded value
-		fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
+		/*fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
 			 "Display update%s: fps=%ld\n, par->nb_backbuffers_full=%d", 
 			 par->pdata->te_irq_enabled?" (TE)":"",
-			 par->freq_dma_transfers, par->nb_backbuffers_full);
+			 par->freq_dma_transfers, par->nb_backbuffers_full);*/
 //#define DEBUG_SPI_ASYNC_FREQ
 #ifdef DEBUG_SPI_ASYNC_FREQ
 		printk("Display update%s: fps=%ld, par->nb_backbuffers_full=%d\n", 
@@ -331,9 +353,6 @@ static void spi_complete_data_write(void *arg)
 	struct fbtft_par *par = (struct fbtft_par *) arg;
 	//printk("%s, par->interlacing=%d, write_line_start=%d\n", __func__, par->interlacing?1:0, write_line_start);
 
-	/* sleep */
-	//msleep(1);
-
 	if (par->interlacing) {
 		/* Check if last line */
 		bool last_line = (par->odd_line && write_line_start >= par->info->var.yres-1) ||
@@ -352,14 +371,14 @@ static void spi_complete_data_write(void *arg)
 			/* Setting window for next line */
 			fbtft_write_cmd_window_line(par);
 		}
-	} else {
+	} 
+	else {
 
 		/* Release lock */
 		lock = false;
 
-		/* Debug */
-		/*int us_to_complete_spi_transfer = (int)ktime_us_delta(ktime_get(), ts_lock);
-		printk("us: %d\n", us_to_complete_spi_transfer);*/
+	    /* Debug */
+	    //fbtft_time_toc(MUTEX_RELEASE, FBTFT_NO_TIME_INDEX, false);
 
 		/* restart transfer if not driven by TE irq*/
 		if (!par->pdata->te_irq_enabled)
@@ -383,6 +402,9 @@ int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t l
 
 	/* DC pin = 1  for data transfers */
 	set_dc(par, 1);
+
+	/* Reset nb_ioctl_during_dma_spi_tx */
+	par->nb_ioctl_during_dma_spi_tx = 0;
 
 	/* FORCED non buffered write here */
 	/* since there is only one SPI */

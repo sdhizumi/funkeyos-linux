@@ -6,25 +6,18 @@
 #include <linux/spinlock.h>
 #include <linux/fbtft.h>
 
-/* Ugly static declarations for now */
-#define NB_STORED_SPI_MSG	1
-static int idx_spi_msg = 0;
-static struct spi_transfer stored_spi_transfers[NB_STORED_SPI_MSG];
-static struct spi_message stored_spi_msg[NB_STORED_SPI_MSG];
+static struct spi_transfer stored_spi_transfers;
+static struct spi_message stored_spi_msg;
 
 int fbtft_write_spi_async(struct fbtft_par *par, void *buf, size_t len, void (* cb)(void *context))
 {
-#if 1
-	struct spi_message *m = &stored_spi_msg[idx_spi_msg];
-	struct spi_transfer *t = &stored_spi_transfers[idx_spi_msg];
+	struct spi_message *m = &stored_spi_msg;
+	struct spi_transfer *t = &stored_spi_transfers;
 	t->tx_buf = buf;
 	t->len = len;
 
-	/* update index */
-	idx_spi_msg = (idx_spi_msg+1)%NB_STORED_SPI_MSG;
-
-	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
-		"%s(len=%d): ", __func__, len);
+	/*fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
+		"%s(len=%d): ", __func__, len);*/
 
 	if (!par->spi) {
 		dev_err(par->info->device,
@@ -39,11 +32,13 @@ int fbtft_write_spi_async(struct fbtft_par *par, void *buf, size_t len, void (* 
 	m->complete = cb;
 	m->context = par;
 	spi_message_add_tail(t, m);
-	
+
 	spin_unlock(&par->dirty_lock);
 
+    /* Debug */
+    fbtft_time_toc(CALLING_SPI_ASYNC, FBTFT_NO_TIME_INDEX, false);
+
 	return spi_async(par->spi, m);
-#endif
 
 #if 0
 	struct spi_transfer t = {

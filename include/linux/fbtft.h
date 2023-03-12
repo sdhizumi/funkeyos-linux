@@ -20,18 +20,9 @@
 #include <linux/spi/spi.h>
 #include <linux/platform_device.h>
 
-/* 	In this mode there is only 1 framebuffer 
-	exposed to the system that is copied 
-	to backbuffers on every FBIOPAN_DISPLAY calls
-*/
-#define FBTFT_USE_BACK_BUFFERS_COPIES
-
 /* Nb of framebuffers */
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	#define FBTFT_VMEM_BUFS						3 	// Minimum 2
-#else  //FBTFT_USE_BACK_BUFFERS_COPIES
-	#define FBTFT_VMEM_BUFS						3 	// Minimum 2
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
+#define FBTFT_NB_FRAMEBUFFERS				3 	// Must be the same as SDL or more
+#define FBTFT_NB_POSTPROCESS_BUFFERS		2 	// Minimum 2
 
 /* Neon rotation and matric transpose, 
 	cannot be called in an interrupt context though
@@ -194,6 +185,12 @@ struct fbtft_platform_data {
 	struct fbtft_par *par;
 };
 
+/* Surcharged timer structure to store data pointer */
+struct timer_with_data {
+    struct timer_list timer;
+    void * data_ptr;
+};
+
 /**
  * struct fbtft_par - Main FBTFT data structure
  *
@@ -252,17 +249,17 @@ struct fbtft_par {
 	} txbuf;
 	u8 *buf;
 	u8 *vmem_ptr;
+	u8 *vmem_ptr_to_postprocess;
 	u8 *vmem_postprocess_hid;
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS];
-#else  //FBTFT_USE_BACK_BUFFERS_COPIES
-	u8 *vmem_postprocess_rot;
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
-	u8 vmem_last_full_buf_idx;
-	u8 vmem_cur_buf_idx;
+	u8 *vmem_postprocessed;
+	u8 *vmem_postprocess_buffers[FBTFT_NB_POSTPROCESS_BUFFERS];
 	int vmem_size;
-	int nb_backbuffers_full;
-	bool force_post_process;
+	int nb_framebuffers_full;
+	u8 last_full_framebuffer_idx;
+	u8 cur_framebuffer_idx;
+	int nb_postprocess_buffers_full;
+	u8 last_full_postprocess_buffer_idx;
+	u8 cur_postprocess_buffer_idx;
 	
 	/* While info->var.xres and info->var.yres 
 	store the visible resolution information, these variables 
@@ -334,6 +331,8 @@ struct fbtft_par {
 	int write_line_end;
 	u32 length_data_transfer;
 	bool must_send_data_transfer_cmd;
+	struct timer_with_data timer_postprocess;
+
 };
 
 #define NUMARGS(...)  (sizeof((int[]){__VA_ARGS__})/sizeof(int))
@@ -364,14 +363,20 @@ int fbtft_init_display(struct fbtft_par *par);
 int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
-void fbtft_set_vmem_buf(struct fbtft_par *par);
+void fbtft_trigger_delayed_framebuffer_post_processing(struct fbtft_par *par);
+u8 *fbtft_get_vmem_buf_to_transfer(struct fbtft_par *par);
+void fbtft_timer_postprocess_function(struct timer_list *timer);
 
 /* fbtft-utils.h */
 #define FBTFT_DEBUG_TIME_TRIGGERS \
-	X(SET_VIDEO_BUF, "]--------[SET_VIDEO_BUF", "]   [Svb") \
+	X(TIC, "]--------[TIC", "]   [tic") \
+	X(SET_VIDEO_BUF, "SET_VIDEO_BUF", "Svb") \
+	X(SET_POSTPROCESS_BUF, "SET_POSTPROCESS_BUF", "Sppb") \
 	X(CALLING_SPI_ASYNC, "CALLING_SPI_ASYNC", "spiC") \
 	X(DMA_TRANSFER_STARTED, "DMA_TRANSFER_STARTED", "dmaS") \
+	X(DMA_TRANSFER_HALF, "DMA_TRANSFER_HALF", "dmaH") \
 	X(DMA_TRANSFER_ENDED, "DMA_TRANSFER_ENDED", "dmaE") \
+	X(FBTFT_DELAYED_WORK_STARTED, "FBTFT_DELAYED_WORK_STARTED", "dwS") \
 	X(ROTATION_STARTED, "ROTATION_STARTED", "rotS") \
 	X(ROTATION_ENDED, "ROTATION_ENDED", "rotE") \
 	X(TE_INT_WHEN_SPI_LOCKED, "TE_INT_WHEN_SPI_LOCKED", "LOCK") \
@@ -385,7 +390,7 @@ typedef enum {FBTFT_DEBUG_TIME_TRIGGERS} E_FBTFT_DEBUG_TIME_TRIGGERS;
 
 #define FBTFT_NO_TIME_INDEX 0xCAFEDECA
 
-#define FBTFT_DEBUG_TIME
+//#define FBTFT_DEBUG_TIME
 #ifdef FBTFT_DEBUG_TIME
 	void __fbtft_time_tic(void);
 	void __fbtft_time_toc(E_FBTFT_DEBUG_TIME_TRIGGERS trigger, int index, bool print_now);

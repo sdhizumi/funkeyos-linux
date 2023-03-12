@@ -1142,6 +1142,7 @@ out:
  */
 void spi_finalize_current_transfer(struct spi_controller *ctlr)
 {
+	//printk("fct");
 	complete(&ctlr->xfer_completion);
 }
 EXPORT_SYMBOL_GPL(spi_finalize_current_transfer);

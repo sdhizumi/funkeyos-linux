@@ -188,7 +188,7 @@
 		if need to surcharge default dimensions
 		*/
 		//width = <240>;
-		//height = <240>;	// FunKey S
+		height = <240>;	// FunKey S
 		
 		/* SPI freq 
 		- 62.5Mhz = max theoritical frequency 

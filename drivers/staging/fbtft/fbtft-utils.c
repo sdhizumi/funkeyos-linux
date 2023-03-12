@@ -162,6 +162,13 @@ u8* fbtft_rotate_270cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
     Debug function to restart stopwatch
 */
 void __fbtft_time_tic(void){
+    
+    /* Get delta in us */
+    if(ts_now){
+        u32 delta_us = ktime_us_delta(ktime_get(), ts_now);
+        fbtft_time_toc(TIC, FBTFT_NO_TIME_INDEX, false);
+    }
+
     ts_now = ktime_get();
 }
 

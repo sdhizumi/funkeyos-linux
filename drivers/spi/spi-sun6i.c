@@ -370,13 +370,7 @@ static int sun6i_spi_transfer_one_dma(struct spi_device *spi,
 
 	dev_dbg(&master->dev, "Using DMA mode for transfer\n");
 
-	/* Debug */
-	//fbtft_time_toc(", d1", false);
-
 	reg = sun6i_spi_read(sspi, SUN6I_FIFO_CTL_REG);
-
-	/* Debug */
-	//fbtft_time_toc(", d2", false);
 
 	/////////// 22us here:
 	if (sspi->tx_buf) {
@@ -391,9 +385,6 @@ static int sun6i_spi_transfer_one_dma(struct spi_device *spi,
 		reg |= (trig_level << SUN6I_FIFO_CTL_TF_ERQ_TRIG_LEVEL_POS);
 	}
 	/////////////////////
-
-	/* Debug */
-	//fbtft_time_toc(", d3", false);
 
 	if (sspi->rx_buf) {
 		ret = sun6i_spi_dmap_prep_rx(master, tfr, &rx_cookie);
@@ -411,9 +402,6 @@ static int sun6i_spi_transfer_one_dma(struct spi_device *spi,
 	sun6i_spi_write(sspi, SUN6I_FIFO_CTL_REG,
 			reg | SUN6I_FIFO_CTL_DMA_DEDICATE);
 
-	/* Debug */
-	//fbtft_time_toc(", d4", false);
-
 	/* Start transfer */
 	sun6i_spi_set(sspi, SUN6I_TFR_CTL_REG, SUN6I_TFR_CTL_XCH);
 
@@ -427,30 +415,18 @@ static int sun6i_spi_transfer_one_dma(struct spi_device *spi,
 
 	fbtft_time_toc(DMA_TRANSFER_ENDED, FBTFT_NO_TIME_INDEX, false);
 
-	/* Debug */
-	//fbtft_time_toc(", d6", false);
-
 	if (sspi->tx_buf && (status = dma_async_is_tx_complete(master->dma_tx,
 			tx_cookie, NULL, NULL))) {
 		dev_warn(&master->dev,
 			"DMA returned completion status of: %s\n",
 			status == DMA_ERROR ? "error" : "in progress");
-
-		/* Debug */
-		//fbtft_time_toc(", d61", false);
 	}
 	if (sspi->rx_buf && (status = dma_async_is_tx_complete(master->dma_rx,
 			rx_cookie, NULL, NULL))) {
 		dev_warn(&master->dev,
 			"DMA returned completion status of: %s\n",
 			status == DMA_ERROR ? "error" : "in progress");
-
-		/* Debug */
-		//fbtft_time_toc(", d62", false);
 	}
-	
-	/* Debug */
-	//fbtft_time_toc(", d7", false);
 
 out:
 	if (ret) {

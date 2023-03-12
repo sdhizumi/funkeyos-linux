@@ -425,7 +425,7 @@ static ssize_t store_switch_backbuf(struct device *device,
 	struct fbtft_par *par = fb_info->par;
 	struct fb_fix_screeninfo *fix = &fb_info->fix;
 	struct fb_var_screeninfo var = {
-			.yoffset = par->vmem_cur_buf_idx*fix->ypanstep
+			.yoffset = par->cur_postprocess_buffer_idx*fix->ypanstep
 		};
 	fb_info->fbops->fb_pan_display(&var, fb_info);
 	

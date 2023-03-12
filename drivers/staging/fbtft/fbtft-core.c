@@ -38,8 +38,9 @@
 #include <linux/hrtimer.h>
 #include <linux/list.h>
 #include <linux/interrupt.h>
+#include <linux/workqueue.h>
 
-/* to support deferred IO */
+/* To support deferred IO */
 #include <linux/rmap.h>
 #include <linux/pagemap.h>
 
@@ -593,287 +594,168 @@ static u8 *fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
 
 
 /* 
-Copy framebuffer memory in current back buffer, then
-change current back buffer idx.
-Used by FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface)
+	Called by FBIOPAN_DISPLAY ioctl (by SDL_Flip() in FB_FlipHWSurface)
 */
 static void fbtft_flip_backbuffer(struct fb_var_screeninfo *var, struct fb_info *info)
 {
 	/* Vars */
 	struct fbtft_par *par = info->par;
 
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
+	struct fb_fix_screeninfo *fix = &info->fix;
+	par->last_full_framebuffer_idx = var->yoffset/fix->ypanstep;
+	par->cur_framebuffer_idx = (par->last_full_framebuffer_idx+1)%FBTFT_NB_FRAMEBUFFERS;
+	//printk("last_full_postprocess_buffer_idx=%d, cur_postprocess_buffer_idx=%d\n", par->last_full_postprocess_buffer_idx, par->cur_postprocess_buffer_idx);
+	if(par->nb_framebuffers_full < FBTFT_NB_FRAMEBUFFERS-1){  // -1 because one framebuffer is never "full" since it's active (next one to be rewritten)
+		par->nb_framebuffers_full++;
+	}
 
-    /* Debug */
-    //fbtft_time_toc(",hid1", false);
-	
-	/* Add HID */
-	u8 *vmem = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_postprocess_hid);
+}
 
-    /* Debug */
-    //fbtft_time_toc(",hid2", false);
+/*
+	Post process function (rotation/HID) to be called by timer 
+	for Bottom-half processing of TE interrupt
+*/
+void fbtft_timer_postprocess_function(struct timer_list *timer){
 	
-	/* Rotate and copy to backbuffer */
+	/* Vars */
+	struct timer_with_data *timer_postprocess = container_of(timer, struct timer_with_data, timer);
+	struct fbtft_par *par = (struct fbtft_par *) timer_postprocess->data_ptr;
+
+	/* Debug */
+	fbtft_time_toc(FBTFT_DELAYED_WORK_STARTED, FBTFT_NO_TIME_INDEX, false);
+
+	/* Postprocess: Print HID */
+	par->vmem_postprocessed = fbtft_vmem_add_hid(par, par->vmem_ptr_to_postprocess, par->vmem_postprocess_hid);
+
+	/* Postprocess: Rotate */
 	if (par->pdata->rotate_soft == 270){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-	#ifdef FBTFT_NEON_OPTIMS
-		preempt_disable();
-		kernel_neon_begin();
-		fbtft_transpose_inv_neon((u16*) vmem, 
-			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
+		par->vmem_postprocessed = fbtft_transpose_inv_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
-		kernel_neon_end();
-		preempt_enable();
-	#else //not defined FBTFT_NEON_OPTIMS
-		fbtft_transpose_inv_soft( vmem, 
-			par->vmem_back_buffers[par->vmem_cur_buf_idx],
-			par->info->var.xres, par->info->var.yres);
-	#endif //FBTFT_NEON_OPTIMS
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-	#ifdef FBTFT_NEON_OPTIMS
-		preempt_disable();
-		kernel_neon_begin();
-		fbtft_rotate_270cw_neon((u16*) vmem, 
-			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
-			par->info->var.xres, par->info->var.yres);
-		kernel_neon_end();
-		preempt_enable();
-	#else //not defined FBTFT_NEON_OPTIMS
-
+	    
 	    /* Debug */
-	    fbtft_time_toc(ROTATION_STARTED, par->vmem_cur_buf_idx, false);
+	    fbtft_time_toc(ROTATION_STARTED, par->cur_postprocess_buffer_idx, false);
 
-		fbtft_rotate_270cw_soft( vmem, 
-			par->vmem_back_buffers[par->vmem_cur_buf_idx],
+		par->vmem_postprocessed = fbtft_rotate_270cw_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
-
-	    fbtft_time_toc(ROTATION_ENDED, par->vmem_cur_buf_idx, false);
-	#endif //FBTFT_NEON_OPTIMS
+	    
+	    /* Debug */
+	    fbtft_time_toc(ROTATION_ENDED, par->cur_postprocess_buffer_idx, false);
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
 	else if (par->pdata->rotate_soft == 90){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-	#ifdef FBTFT_NEON_OPTIMS
-		preempt_disable();
-		kernel_neon_begin();
-		fbtft_transpose_neon((u16*) vmem, 
-			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
+		par->vmem_postprocessed = fbtft_transpose_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
-		kernel_neon_end();
-		preempt_enable();
-	#else //not defined FBTFT_NEON_OPTIMS
-		fbtft_transpose_soft( vmem, 
-			par->vmem_back_buffers[par->vmem_cur_buf_idx],
-			par->info->var.xres, par->info->var.yres);
-	#endif //FBTFT_NEON_OPTIMS
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-	#ifdef FBTFT_NEON_OPTIMS
-		preempt_disable();
-		kernel_neon_begin();
-		fbtft_rotate_90cw_neon((u16*) vmem, 
-			(u16*) par->vmem_back_buffers[par->vmem_cur_buf_idx],
+		par->vmem_postprocessed = fbtft_rotate_90cw_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
-		kernel_neon_end();
-		preempt_enable();
-	#else //not defined FBTFT_NEON_OPTIMS
-		fbtft_rotate_90cw_soft( vmem, 
-			par->vmem_back_buffers[par->vmem_cur_buf_idx],
-			par->info->var.xres, par->info->var.yres);
-	#endif //FBTFT_NEON_OPTIMS
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
-	/* No rotation: direct copy to current backbuffer */
-	else{
-		memcpy(par->vmem_back_buffers[par->vmem_cur_buf_idx], 
-			vmem, par->info->var.yres * par->info->fix.line_length);
-	}
 
-	/* Update vmem buffer idx */
-	par->vmem_last_full_buf_idx = par->vmem_cur_buf_idx;
-	par->vmem_cur_buf_idx = (par->vmem_cur_buf_idx+1)%FBTFT_VMEM_BUFS;
-	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS-1){   // -1 because one framebuffer is never "full" since it's active and can be rewritten
-		par->nb_backbuffers_full++;
+	/* Increment backbuffers idx */
+	par->last_full_postprocess_buffer_idx = par->cur_postprocess_buffer_idx;
+	par->cur_postprocess_buffer_idx = (par->cur_postprocess_buffer_idx+1)%FBTFT_NB_POSTPROCESS_BUFFERS;
+	if(par->nb_postprocess_buffers_full < FBTFT_NB_POSTPROCESS_BUFFERS){
+		par->nb_postprocess_buffers_full++;
 	}
-	//printk("f%d\n", par->nb_backbuffers_full);
-
-#else // ! FBTFT_USE_BACK_BUFFERS_COPIES
-
-	struct fb_fix_screeninfo *fix = &info->fix;
-	par->vmem_last_full_buf_idx = var->yoffset/fix->ypanstep;
-	par->vmem_cur_buf_idx = (par->vmem_last_full_buf_idx+1)%FBTFT_VMEM_BUFS;
-	//printk("vmem_last_full_buf_idx=%d, vmem_cur_buf_idx=%d\n", par->vmem_last_full_buf_idx, par->vmem_cur_buf_idx);
-	if(par->nb_backbuffers_full < FBTFT_VMEM_BUFS-1){  // -1 because one framebuffer is never "full" since it's active and can be rewritten
-		par->nb_backbuffers_full++;
-	}
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 }
 
-	
-/* Get last memory buffer transferred (full or partial) */
 /*
-This could be handled using a double mmapped buffer (or triple) 
-pointed by par->info->screen_buffer. The buffer pointed
-(the one being written) should change using the
-FBIOPAN_DISPLAY ioctl called by SDL_Flip() (in FB_FlipHWSurface).
-*/
-void fbtft_set_vmem_buf(struct fbtft_par *par){
+	Function to initiate bottom-half post process (not during Top-half TE interrupt)
+	if framebuffers are full
+ */
+void fbtft_trigger_delayed_framebuffer_post_processing(struct fbtft_par *par){
 
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-
-	/*#warning remove this
-	par->nb_backbuffers_full=1;*/
-
-	// In case frame buffers are full (sync with FBIOPAN_DISPLAY ioctls)
-	if(par->nb_backbuffers_full > 0){
-		
-	//#define FBTFT_CLEAR_ALL_BACKBUFFERS
-	#ifdef FBTFT_CLEAR_ALL_BACKBUFFERS
-		//printk("%d full, idx last %d\n", par->nb_backbuffers_full, par->vmem_last_full_buf_idx);
-		par->vmem_ptr = par->vmem_back_buffers[par->vmem_last_full_buf_idx];
-		par->nb_backbuffers_full=0; // 0 forced (no decrement here) since only the latest one is up to date
-	#else //FBTFT_CLEAR_ALL_BACKBUFFERS
-		int vmem_oldest_full_buf_idx = par->vmem_last_full_buf_idx + 1 - par->nb_backbuffers_full;
-		if(vmem_oldest_full_buf_idx < 0) {
-			vmem_oldest_full_buf_idx = FBTFT_VMEM_BUFS+vmem_oldest_full_buf_idx;
-		}
-		//printk("%d full, idx last: %d, idx oldest: %d\n", par->nb_backbuffers_full, par->vmem_last_full_buf_idx, vmem_oldest_full_buf_idx);
-
-	    /* Debug */
-	    fbtft_time_toc(SET_VIDEO_BUF, vmem_oldest_full_buf_idx, false);
-
-		par->vmem_ptr = par->vmem_back_buffers[vmem_oldest_full_buf_idx];
-		par->nb_backbuffers_full--;
-	#endif //FBTFT_CLEAR_ALL_BACKBUFFERS
-	}
-	// In case screen is not driven by FBIOPAN_DISPLAY ioctl, draw directly the framebuffer
-	else{
-		//printk("0\n");
-
-		/* Print HID */
-		par->vmem_ptr = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_postprocess_hid);
-
-		/* Rotate and copy to unused backbuffer */
-		if (par->pdata->rotate_soft == 270){
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-			par->vmem_ptr = fbtft_transpose_inv_soft(par->vmem_ptr, 
-				par->vmem_back_buffers[par->vmem_last_full_buf_idx], 
-				par->info->var.xres, par->info->var.yres);
-#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-			par->vmem_ptr = fbtft_rotate_270cw_soft(par->vmem_ptr, 
-				par->vmem_back_buffers[par->vmem_last_full_buf_idx],
-				par->info->var.xres, par->info->var.yres);
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-		}
-		else if (par->pdata->rotate_soft == 90){
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-			par->vmem_ptr = fbtft_transpose_soft(par->vmem_ptr, 
-				par->vmem_back_buffers[par->vmem_last_full_buf_idx], 
-				par->info->var.xres, par->info->var.yres);
-#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-			par->vmem_ptr = fbtft_rotate_90cw_soft(par->vmem_ptr, 
-				par->vmem_back_buffers[par->vmem_last_full_buf_idx],
-				par->info->var.xres, par->info->var.yres);
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-		}
-	}
-
-#else // ! FBTFT_USE_BACK_BUFFERS_COPIES
-	static bool prev_was_full = false;
-	
-	if(par->nb_backbuffers_full > 0){
-
-		/* Clear flags */
-		//printk("KERN_EMERG using vmem_last_full_buf_idx=%d\n", par->vmem_last_full_buf_idx);
-		par->nb_backbuffers_full=0; 
-		prev_was_full = true;
+	if(par->nb_framebuffers_full > 0){
+//#define FBTFT_CLEAR_ALL_BACKBUFFERS
+#ifdef FBTFT_CLEAR_ALL_BACKBUFFERS
 		
 		/* Get last full screen buffer */
-		u8 * last_full_screen_buffer = par->info->screen_buffer + (par->vmem_last_full_buf_idx*par->vmem_size);
+		par->vmem_ptr_to_postprocess = par->info->screen_buffer + (par->last_full_framebuffer_idx*par->vmem_size);
 
-		/* Print HID */
-		par->vmem_ptr = fbtft_vmem_add_hid(par, last_full_screen_buffer, par->vmem_postprocess_hid);
+		/* Clear flags */
+		par->nb_framebuffers_full=0;
+#else //FBTFT_CLEAR_ALL_BACKBUFFERS
 
-		/* Rotate */
-		if (par->pdata->rotate_soft == 270){
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-			par->vmem_ptr = fbtft_transpose_inv_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot, 
-				par->info->var.xres, par->info->var.yres);
-#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-			par->vmem_ptr = fbtft_rotate_270cw_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot,
-				par->info->var.xres, par->info->var.yres);
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+		/* Get oldest filled buffer */
+		int vmem_oldest_full_framebuffer_idx = par->last_full_framebuffer_idx + 1 - par->nb_framebuffers_full;
+		if(vmem_oldest_full_framebuffer_idx < 0) {
+			vmem_oldest_full_framebuffer_idx = FBTFT_NB_FRAMEBUFFERS+vmem_oldest_full_framebuffer_idx;
 		}
-		else if (par->pdata->rotate_soft == 90){
-#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-			par->vmem_ptr = fbtft_transpose_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot, 
-				par->info->var.xres, par->info->var.yres);
-#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-			par->vmem_ptr = fbtft_rotate_90cw_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot,
-				par->info->var.xres, par->info->var.yres);
-#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-		}
+
+	    /* Debug */
+	    fbtft_time_toc(SET_POSTPROCESS_BUF, vmem_oldest_full_framebuffer_idx, false);
+
+		par->vmem_ptr_to_postprocess = par->info->screen_buffer + (vmem_oldest_full_framebuffer_idx*par->vmem_size);
+		par->nb_framebuffers_full--;
+#endif //FBTFT_CLEAR_ALL_BACKBUFFERS
+
+		/* Use current vmem buf and start delayed work to set next vmem ptr */
+		mod_timer(&par->timer_postprocess.timer, jiffies+1); // if HZ=200, this means between 5ms and 10ms later
 	}
-	else{
+}
 
-		/* 	Reset framebuffer orders (since everything that
-			do not use triple buffering but direct fb blits
-			will write in idx 0. Even SDL only clears idx 0).
-			
-			This means we must recopy previous full framebuffer 
-			in idx 0 framebuffer to avoid gliches.
-		*/
-		if(prev_was_full && par->vmem_last_full_buf_idx != 0){
-			memcpy(par->info->screen_buffer, 
-				par->info->screen_buffer + (par->vmem_last_full_buf_idx*par->vmem_size), 
-				par->info->var.yres * par->info->fix.line_length);
-		}
-		prev_was_full = false;
-		par->vmem_last_full_buf_idx = FBTFT_VMEM_BUFS-1;
-		par->vmem_cur_buf_idx = 0;
+/* 
+* Function to get video memory buffer to transfer
+*/
+u8 *fbtft_get_vmem_buf_to_transfer(struct fbtft_par *par){
+
+	/* Vars */
+	u8 *vmem = par->vmem_ptr;
+
+    /* Debug */
+    fbtft_time_toc(SET_VIDEO_BUF, FBTFT_NO_TIME_INDEX, false);
+	
+	/* Backbuffers filled */	
+	if(par->nb_postprocess_buffers_full > 0){
+		
+		/* Get last full screen buffer */
+		vmem = par->vmem_postprocessed;
+
+		/* Clear flags */
+		par->nb_postprocess_buffers_full=0;
+		
+	}
+	else{ // No backbuffers full
+
+		/* Get latest filled buffer */
+		vmem = par->info->screen_buffer + (par->last_full_framebuffer_idx*par->vmem_size);
 
 		/* Print HID */
-		par->vmem_ptr = fbtft_vmem_add_hid(par, par->info->screen_buffer, par->vmem_postprocess_hid);
+		vmem = fbtft_vmem_add_hid(par, vmem, par->vmem_postprocess_hid);
 
 		/* Rotate and copy to unused backbuffer */
 		if (par->pdata->rotate_soft == 270){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-			par->vmem_ptr = fbtft_transpose_inv_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot, 
+			vmem = fbtft_transpose_inv_soft(vmem, 
+				par->vmem_postprocess_buffers[par->last_full_postprocess_buffer_idx], 
 				par->info->var.xres, par->info->var.yres);
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-			par->vmem_ptr = fbtft_rotate_270cw_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot,
+			vmem = fbtft_rotate_270cw_soft(vmem, 
+				par->vmem_postprocess_buffers[par->last_full_postprocess_buffer_idx], 
 				par->info->var.xres, par->info->var.yres);
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 		}
 		else if (par->pdata->rotate_soft == 90){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-			par->vmem_ptr = fbtft_transpose_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot, 
+			vmem = fbtft_transpose_soft(vmem, 
+				par->vmem_postprocess_buffers[par->last_full_postprocess_buffer_idx], 
 				par->info->var.xres, par->info->var.yres);
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-			par->vmem_ptr = fbtft_rotate_90cw_soft(par->vmem_ptr, 
-				par->vmem_postprocess_rot,
+			vmem = fbtft_rotate_90cw_soft(vmem, 
+				par->vmem_postprocess_buffers[par->last_full_postprocess_buffer_idx], 
 				par->info->var.xres, par->info->var.yres);
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 		}
 	}
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 
-	//Bypass:
-	//par->vmem_ptr = par->info->screen_buffer;
-	
-	/* Controlled delay for tearing line tests */
-//#define DELAY_NOP	5500000
-#ifdef DELAY_NOP
-	int i;
-	for ( i = 0; i < DELAY_NOP; i++)
-		asm("nop");
-#endif
+	return vmem;
 }
 
 
@@ -957,7 +839,7 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 	par->write_line_end = dirty_lines_end;
 
 	/* Set vmem buf to transfer over SPI */
-	fbtft_set_vmem_buf(par);
+	par->vmem_ptr = fbtft_get_vmem_buf_to_transfer(par);
 
 	/* Screen upgrade */
 	par->fbtftops.update_display(par, dirty_lines_start, dirty_lines_end);
@@ -1392,11 +1274,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	struct fb_ops *fbops = NULL;
 	struct fb_deferred_io *fbdefio = NULL;
 	u8 *vmem = NULL;
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	u8 *vmem_back_buffers[FBTFT_VMEM_BUFS] = {NULL};
-#else
-	u8 *vmem_postprocess_rot = NULL;
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
+	u8 *vmem_postprocess_buffers[FBTFT_NB_POSTPROCESS_BUFFERS] = {NULL};
 	u8 *vmem_postprocess_hid = NULL;
 	void *txbuf = NULL;
 	void *buf = NULL;
@@ -1472,30 +1350,18 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	vmem_size = width * height * bpp / 8;
 	//vmem = devm_kzalloc(dev, vmem_size, GFP_KERNEL); // TRAP. Managed kzalloc. Memory allocated with this function is automatically freed on driver detach
 	//vmem = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
-
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	vmem = vzalloc(vmem_size);
+	vmem = vzalloc(vmem_size*FBTFT_NB_FRAMEBUFFERS); // Allocate directly 3 frame buffers
 	if (!vmem)
 		goto alloc_fail;
 
-	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
+	for (i = 0; i < FBTFT_NB_POSTPROCESS_BUFFERS; ++i)
 	{
-		vmem_back_buffers[i] = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
-		//vmem_back_buffers[i] = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
-		//vmem_back_buffers[i] = vzalloc(vmem_size);
-		if (!vmem_back_buffers[i])
+		vmem_postprocess_buffers[i] = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
+		//vmem_postprocess_buffers[i] = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
+		//vmem_postprocess_buffers[i] = vzalloc(vmem_size);
+		if (!vmem_postprocess_buffers[i])
 			goto alloc_fail;
 	}
-#else
-	vmem = vzalloc(vmem_size*FBTFT_VMEM_BUFS); // Allocate directly 3 frame buffers
-	if (!vmem)
-		goto alloc_fail;
-	if(pdata->rotate_soft){
-		vmem_postprocess_rot = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
-		if (!vmem_postprocess_rot)
-			goto alloc_fail;
-	}
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 
 	vmem_postprocess_hid = devm_kzalloc(dev, vmem_size, GFP_KERNEL);
 	//vmem_postprocess_hid = kzalloc(vmem_size, GFP_DMA | GFP_KERNEL);
@@ -1559,17 +1425,13 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	info->fix.ywrapstep =	   0;
 	info->fix.line_length =    width * bpp / 8;
 	info->fix.accel =          FB_ACCEL_NONE;
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	info->fix.smem_len =       vmem_size;
-#else
-	info->fix.smem_len =       vmem_size*FBTFT_VMEM_BUFS;
-#endif
+	info->fix.smem_len =       vmem_size*FBTFT_NB_FRAMEBUFFERS;
 
 	info->var.rotate =         pdata->rotate;
 	info->var.xres =           width;
 	info->var.yres =           height;
 	info->var.xres_virtual =   info->var.xres;
-	info->var.yres_virtual =   info->var.yres*FBTFT_VMEM_BUFS; // So that SDL allows SDL_DOUBLEBUF and SDL_TRIPLEBUF
+	info->var.yres_virtual =   info->var.yres*FBTFT_NB_FRAMEBUFFERS; // So that SDL allows SDL_DOUBLEBUF and SDL_TRIPLEBUF
 	info->var.bits_per_pixel = bpp;
 	info->var.nonstd =         1;
 
@@ -1590,19 +1452,17 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	par->driver_xres = disp_width;
 	par->driver_yres = disp_height;
 	par->vmem_size = vmem_size;
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	for (i = 0; i < FBTFT_VMEM_BUFS; ++i)
+	for (i = 0; i < FBTFT_NB_POSTPROCESS_BUFFERS; ++i)
 	{
-		par->vmem_back_buffers[i] = vmem_back_buffers[i];
+		par->vmem_postprocess_buffers[i] = vmem_postprocess_buffers[i];
 	}
-#else
-	par->vmem_postprocess_rot = vmem_postprocess_rot;
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
 	par->vmem_postprocess_hid = vmem_postprocess_hid;
-	par->vmem_cur_buf_idx = 0;
-	par->vmem_last_full_buf_idx = FBTFT_VMEM_BUFS-1;
-	par->vmem_ptr = par->info->screen_buffer + (par->vmem_cur_buf_idx*par->vmem_size);
-	par->nb_backbuffers_full = 0;
+	par->cur_framebuffer_idx = 0;
+	par->last_full_framebuffer_idx = par->cur_postprocess_buffer_idx;
+	par->cur_postprocess_buffer_idx = 0;
+	par->last_full_postprocess_buffer_idx = par->cur_postprocess_buffer_idx;
+	par->vmem_ptr = par->info->screen_buffer + (par->cur_framebuffer_idx*par->vmem_size);
+	par->nb_postprocess_buffers_full = 0;
 	par->pdata = pdata;
 	pdata->par = par;
 	par->debug = display->debug;
@@ -1676,7 +1536,12 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	if (display->backlight)
 		par->fbtftops.register_backlight = fbtft_register_backlight;
 
-	/* use driver provided functions */
+	/* Init timer */
+	//INIT_DELAYED_WORK(&par->my_work, fbtft_my_work_handler);
+	timer_setup(&par->timer_postprocess.timer, fbtft_timer_postprocess_function, 0);
+	par->timer_postprocess.data_ptr = par;
+
+	/* Use driver provided functions */
 	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
 
 	return info;
@@ -1785,17 +1650,11 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 			par->driver_xres, par->driver_yres);
 	}
 
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	char *back_str = " back";
-#else
-	char *back_str = "";
-#endif //FBTFT_USE_BACK_BUFFERS_COPIES
-
 	dev_info(fb_info->dev,
-		 "%s frame buffer, %dx%d%s, %d KiB video memory%s, %d%s buffers, fps=%lu%s%s%s\n",
+		 "%s frame buffer, %dx%d%s, %d KiB video memory%s, %d buffers, fps=%lu%s%s%s\n",
 		 fb_info->fix.id, fb_info->var.xres, fb_info->var.yres, text3,
 		 fb_info->fix.smem_len >> 10, text1, 
-		 FBTFT_VMEM_BUFS, back_str,
+		 FBTFT_NB_FRAMEBUFFERS,
 		 HZ / fb_info->fbdefio->delay, text2,
 		 par->spi_async_mode ? ", SPI mode async" : "",
 		 par->interlacing ? ", Interlaced" : "");
@@ -2137,14 +1996,14 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	int us_since_last_ioctl = (int)ktime_us_delta(ts_now, par->ts_last_ioctl_call);
 #define FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER	
 #ifdef FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER
-	if(	!par->nb_backbuffers_full &&
+	if(	!par->nb_framebuffers_full &&
 		us_since_last_ioctl <= 1000000/MIN_FPS_WITHOUT_APPLICATIVE_TEARING &&
 		us_since_last_ioctl < (par->us_between_ioctl_calls*2) ){
 
 		// Debug
-		/*printk("%s exit IRQ_HANDLED. par->nb_backbuffers_full=%d, us_since_last_ioctl=%d, par->us_between_ioctl_calls=%d\n", 
+		/*printk("%s exit IRQ_HANDLED. par->nb_framebuffers_full=%d, us_since_last_ioctl=%d, par->us_between_ioctl_calls=%d\n", 
 			__func__,
-			par->nb_backbuffers_full, 
+			par->nb_framebuffers_full, 
 			us_since_last_ioctl, 
 			par->us_between_ioctl_calls);*/
 

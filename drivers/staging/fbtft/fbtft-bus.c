@@ -5,6 +5,7 @@
 #include <linux/spi/spi.h>
 #include <linux/delay.h> /* usleep_range */
 #include <video/mipi_display.h>
+#include <linux/workqueue.h>
 #include <linux/fbtft.h>
 #include "fb_text.h"
 
@@ -194,22 +195,25 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 		//par->freq_dma_transfers = count*1000000/delta_us; // floored value
 		par->freq_dma_transfers = (2*count*1000000+delta_us) / (2*delta_us); // rounded value
 		/*fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
-			 "Display update%s: fps=%ld\n, par->nb_backbuffers_full=%d", 
+			 "Display update%s: fps=%ld\n, par->nb_postprocess_buffers_full=%d", 
 			 par->pdata->te_irq_enabled?" (TE)":"",
-			 par->freq_dma_transfers, par->nb_backbuffers_full);*/
+			 par->freq_dma_transfers, par->nb_postprocess_buffers_full);*/
 //#define DEBUG_SPI_ASYNC_FREQ
 #ifdef DEBUG_SPI_ASYNC_FREQ
-		printk("Display update%s: fps=%ld, par->nb_backbuffers_full=%d\n", 
+		printk("Display update%s: fps=%ld, par->nb_postprocess_buffers_full=%d\n", 
 			 par->pdata->te_irq_enabled?" (TE)":"",
-			 par->freq_dma_transfers, par->nb_backbuffers_full);
+			 par->freq_dma_transfers, par->nb_postprocess_buffers_full);
 #endif //DEBUG_SPI_ASYNC_FREQ
 		count = 0;
 		prev_ts = ts_now;
 	}
 
 
+	/* Trigger delayed post processing of framebuffers */
+	fbtft_trigger_delayed_framebuffer_post_processing(par);
+
 	/* Set vmem buf to transfer over SPI */
-	fbtft_set_vmem_buf(par);
+	par->vmem_ptr = fbtft_get_vmem_buf_to_transfer(par);
 
 	/* New line to write */
 	write_line_start = par->write_line_start;

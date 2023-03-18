@@ -592,37 +592,19 @@ static u8 *fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
 	return vmem_dst;
 }
 
-
-/* 
-	Called by FBIOPAN_DISPLAY ioctl (by SDL_Flip() in FB_FlipHWSurface)
-*/
-static void fbtft_flip_backbuffer(struct fb_var_screeninfo *var, struct fb_info *info)
-{
-	/* Vars */
-	struct fbtft_par *par = info->par;
-
-	struct fb_fix_screeninfo *fix = &info->fix;
-	par->last_full_framebuffer_idx = var->yoffset/fix->ypanstep;
-	par->cur_framebuffer_idx = (par->last_full_framebuffer_idx+1)%FBTFT_NB_FRAMEBUFFERS;
-	//printk("last_full_postprocess_buffer_idx=%d, cur_postprocess_buffer_idx=%d\n", par->last_full_postprocess_buffer_idx, par->cur_postprocess_buffer_idx);
-	if(par->nb_framebuffers_full < FBTFT_NB_FRAMEBUFFERS-1){  // -1 because one framebuffer is never "full" since it's active (next one to be rewritten)
-		par->nb_framebuffers_full++;
-	}
-
-}
-
+#ifdef FBTFT_USE_DELAYED_WORKER_FOR_BH
 /*
 	Post process function (rotation/HID) to be called by timer 
 	for Bottom-half processing of TE interrupt
 */
-void fbtft_timer_postprocess_function(struct timer_list *timer){
-	
+void fbtft_worker_postprocess_function(struct work_struct *work){
 	/* Vars */
-	struct timer_with_data *timer_postprocess = container_of(timer, struct timer_with_data, timer);
-	struct fbtft_par *par = (struct fbtft_par *) timer_postprocess->data_ptr;
+	struct delayed_work *delayed_worker = container_of(work, struct delayed_work, work);
+	struct delayed_work_with_data *delayed_worker_with_data = container_of(delayed_worker, struct delayed_work_with_data, delayed_worker);
+	struct fbtft_par *par = (struct fbtft_par *) delayed_worker_with_data->data_ptr;
 
 	/* Debug */
-	fbtft_time_toc(FBTFT_DELAYED_WORK_STARTED, FBTFT_NO_TIME_INDEX, false);
+	//fbtft_time_toc(FBTFT_DELAYED_WORK_STARTED, FBTFT_NO_TIME_INDEX, false);
 
 	/* Postprocess: Print HID */
 	par->vmem_postprocessed = fbtft_vmem_add_hid(par, par->vmem_ptr_to_postprocess, par->vmem_postprocess_hid);
@@ -658,13 +640,71 @@ void fbtft_timer_postprocess_function(struct timer_list *timer){
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
 
-	/* Increment backbuffers idx */
+	/* Increment postprocess_buffers idx */
 	par->last_full_postprocess_buffer_idx = par->cur_postprocess_buffer_idx;
 	par->cur_postprocess_buffer_idx = (par->cur_postprocess_buffer_idx+1)%FBTFT_NB_POSTPROCESS_BUFFERS;
 	if(par->nb_postprocess_buffers_full < FBTFT_NB_POSTPROCESS_BUFFERS){
 		par->nb_postprocess_buffers_full++;
 	}
 }
+
+#else // FBTFT_USE_DELAYED_WORKER_FOR_BH
+
+/*
+	Post process function (rotation/HID) to be called by timer 
+	for Bottom-half processing of TE interrupt
+*/
+void fbtft_timer_postprocess_function(struct timer_list *timer){
+	
+	/* Vars */
+	struct timer_with_data *timer_postprocess = container_of(timer, struct timer_with_data, timer);
+	struct fbtft_par *par = (struct fbtft_par *) timer_postprocess->data_ptr;
+
+	/* Debug */
+	//fbtft_time_toc(FBTFT_DELAYED_WORK_STARTED, FBTFT_NO_TIME_INDEX, false);
+
+	/* Postprocess: Print HID */
+	par->vmem_postprocessed = fbtft_vmem_add_hid(par, par->vmem_ptr_to_postprocess, par->vmem_postprocess_hid);
+
+	/* Postprocess: Rotate */
+	if (par->pdata->rotate_soft == 270){
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+		par->vmem_postprocessed = fbtft_transpose_inv_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+			par->info->var.xres, par->info->var.yres);
+#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
+	    
+	    /* Debug */
+	    fbtft_time_toc(ROTATION_STARTED, par->cur_postprocess_buffer_idx, false);
+
+		par->vmem_postprocessed = fbtft_rotate_270cw_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+			par->info->var.xres, par->info->var.yres);
+	    
+	    /* Debug */
+	    fbtft_time_toc(ROTATION_ENDED, par->cur_postprocess_buffer_idx, false);
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	}
+	else if (par->pdata->rotate_soft == 90){
+#ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+		par->vmem_postprocessed = fbtft_transpose_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+			par->info->var.xres, par->info->var.yres);
+#else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
+		par->vmem_postprocessed = fbtft_rotate_90cw_soft(par->vmem_postprocessed, 
+			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+			par->info->var.xres, par->info->var.yres);
+#endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
+	}
+
+	/* Increment postprocess_buffers idx */
+	par->last_full_postprocess_buffer_idx = par->cur_postprocess_buffer_idx;
+	par->cur_postprocess_buffer_idx = (par->cur_postprocess_buffer_idx+1)%FBTFT_NB_POSTPROCESS_BUFFERS;
+	if(par->nb_postprocess_buffers_full < FBTFT_NB_POSTPROCESS_BUFFERS){
+		par->nb_postprocess_buffers_full++;
+	}
+}
+#endif // FBTFT_USE_DELAYED_WORKER_FOR_BH
 
 /*
 	Function to initiate bottom-half post process (not during Top-half TE interrupt)
@@ -673,15 +713,6 @@ void fbtft_timer_postprocess_function(struct timer_list *timer){
 void fbtft_trigger_delayed_framebuffer_post_processing(struct fbtft_par *par){
 
 	if(par->nb_framebuffers_full > 0){
-//#define FBTFT_CLEAR_ALL_BACKBUFFERS
-#ifdef FBTFT_CLEAR_ALL_BACKBUFFERS
-		
-		/* Get last full screen buffer */
-		par->vmem_ptr_to_postprocess = par->info->screen_buffer + (par->last_full_framebuffer_idx*par->vmem_size);
-
-		/* Clear flags */
-		par->nb_framebuffers_full=0;
-#else //FBTFT_CLEAR_ALL_BACKBUFFERS
 
 		/* Get oldest filled buffer */
 		int vmem_oldest_full_framebuffer_idx = par->last_full_framebuffer_idx + 1 - par->nb_framebuffers_full;
@@ -692,13 +723,30 @@ void fbtft_trigger_delayed_framebuffer_post_processing(struct fbtft_par *par){
 	    /* Debug */
 	    fbtft_time_toc(SET_POSTPROCESS_BUF, vmem_oldest_full_framebuffer_idx, false);
 
+		/* Debug */
+		//printk("TE - nb_fb = %d, using idx %d", par->nb_framebuffers_full, vmem_oldest_full_framebuffer_idx);
+
 		par->vmem_ptr_to_postprocess = par->info->screen_buffer + (vmem_oldest_full_framebuffer_idx*par->vmem_size);
 		par->nb_framebuffers_full--;
-#endif //FBTFT_CLEAR_ALL_BACKBUFFERS
-
-		/* Use current vmem buf and start delayed work to set next vmem ptr */
-		mod_timer(&par->timer_postprocess.timer, jiffies+1); // if HZ=200, this means between 5ms and 10ms later
 	}
+	else{
+
+		/* Debug */
+		//printk("!TE - nb_fb = %d, using idx %d", par->nb_framebuffers_full, par->last_full_framebuffer_idx);
+
+	    /* Debug */
+	    fbtft_time_toc(SET_POSTPROCESS_BUF, par->last_full_framebuffer_idx, false);
+
+		/* Use last filled framebuffer */
+		par->vmem_ptr_to_postprocess = par->info->screen_buffer + (par->last_full_framebuffer_idx*par->vmem_size);
+	}
+
+	/* Use current vmem buf and start delayed work to set next vmem ptr */
+#ifdef FBTFT_USE_DELAYED_WORKER_FOR_BH
+	schedule_delayed_work(&par->delayed_worker_postprocess.delayed_worker, 1); // if HZ=200, this means between 5ms and 10ms later
+#else // FBTFT_USE_DELAYED_WORKER_FOR_BH
+	mod_timer(&par->timer_postprocess.timer, jiffies+1); // if HZ=200, this means between 5ms and 10ms later
+#endif // FBTFT_USE_DELAYED_WORKER_FOR_BH
 }
 
 /* 
@@ -1087,9 +1135,12 @@ static int fbtft_fb_blank(int blank, struct fb_info *info)
 	return ret;
 }
 
-/* Called by ioctl(FBIOPAN_DISPLAY) */
+/* 
+	Called by FBIOPAN_DISPLAY ioctl (by SDL_Flip() in FB_FlipHWSurface)
+*/
 static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *info)
 {
+	/* Vars */ 
 	struct fbtft_par *par = info->par;
 	ktime_t ts_now;
 	int ret = -EINVAL;
@@ -1097,16 +1148,16 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 	dev_dbg(info->dev, "%s\n", __func__);
 
 
-	/* Frequency of ioctl(FBIOPAN_DISPLAY) calls */
+	/* Compute frequency of ioctl(FBIOPAN_DISPLAY) calls */
 	ts_now = ktime_get();
 	if(ts_now < par->ts_last_ioctl_call) par->ts_last_ioctl_call = ts_now; //overflow
-	par->us_between_ioctl_calls = ktime_us_delta(ts_now, par->ts_last_ioctl_call);
+	par->us_between_ioctl_calls = (unsigned int)ktime_us_delta(ts_now, par->ts_last_ioctl_call);
 	par->ts_last_ioctl_call = ts_now;
 
 #define IOCTL_FREQ_SECS		FBTFT_FREQ_UPDATE_SECS
 	static ktime_t ts_earlier_fps = 0;
-	static int count = 0;
-	static int us_between_frames_avg = 0;
+	static unsigned int count = 0;
+	static unsigned int us_between_frames_avg = 0;
 
 	// Overflow:
 	if(ts_now < ts_earlier_fps){
@@ -1116,7 +1167,7 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 	}
 	else{
 		count++;
-		us_between_frames_avg += (int)par->us_between_ioctl_calls;
+		us_between_frames_avg += (unsigned int) par->us_between_ioctl_calls;
 	}
 	int delta_us = (int)ktime_us_delta(ts_now, ts_earlier_fps);
 
@@ -1133,76 +1184,25 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 		ts_earlier_fps = ts_now;
 	}
 
-	/* Limit fbtft_flip_backbuffer calls at par->freq_dma_transfers 
-	to avoid processing for nothing in some cases. 
-	Not needed if defined(FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER) */
-//#define FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
-#ifdef FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
 
-	static int last_nb_ioctl_calls_per_dma_transfers = 0;
-	static int idx_ioctl = 0;
-	int current_nb_ioctl_calls_per_dma_transfers = par->us_between_dma_transfers/par->us_between_ioctl_calls;
-	//int current_nb_ioctl_calls_per_dma_transfers = par->freq_ioctl_calls/par->freq_dma_transfers;
-
-	if(last_nb_ioctl_calls_per_dma_transfers != current_nb_ioctl_calls_per_dma_transfers){
-		idx_ioctl = current_nb_ioctl_calls_per_dma_transfers-1;
-		last_nb_ioctl_calls_per_dma_transfers = current_nb_ioctl_calls_per_dma_transfers;
-	}
-	idx_ioctl = (idx_ioctl + 1)%current_nb_ioctl_calls_per_dma_transfers;
-	if(	par->freq_dma_transfers >= MIN_FPS_WITHOUT_APPLICATIVE_TEARING && 
-		current_nb_ioctl_calls_per_dma_transfers >= 2 && 
-		idx_ioctl != 0
-		){
-
+	/* Flip current framebuffer */
+	struct fb_fix_screeninfo *fix = &info->fix;
+	par->last_full_framebuffer_idx = var->yoffset/fix->ypanstep;
+	par->cur_framebuffer_idx = (par->last_full_framebuffer_idx+1)%FBTFT_NB_FRAMEBUFFERS;
+	/*printk("last_full_postprocess_buffer_idx=%d, cur_postprocess_buffer_idx=%d\n", 
+		par->last_full_postprocess_buffer_idx, par->cur_postprocess_buffer_idx);*/
+	if(par->nb_framebuffers_full < FBTFT_NB_FRAMEBUFFERS-1){  // -1 because one framebuffer is never "full" since it's active (next one to be rewritten)
+		par->nb_framebuffers_full++;
+		
 		/* Debug */
-		printk("cpt = %d, lcpt=%d, us_dma=%d, us_ioctl=%d\n", 
-			current_nb_ioctl_calls_per_dma_transfers, 
-			last_nb_ioctl_calls_per_dma_transfers, 
-			par->us_between_dma_transfers,
-			par->us_between_ioctl_calls);
-		return -ENODEV; 
+		//printk("ioctl - nb_fb = %d", par->nb_framebuffers_full);
+	}
+	else if(par->nb_framebuffers_full == FBTFT_NB_FRAMEBUFFERS-1){
+		//printk("ioctl LOST FRAME - nb_fb = %d", par->nb_framebuffers_full);	
 	}
 
-#endif //FBTFT_LIMIT_BACK_BUFFERS_FLIPPING
 
-	/* Frequency of ioctl(FBIOPAN_DISPLAY) actual processes */
-	static int count2 = 0;
-	static ktime_t ts_earlier_adapted = 0;
-	ts_now = ktime_get();
-	// Overflow:
-	if(ts_now < ts_earlier_adapted){
-		count2 = 0;
-		ts_earlier_adapted = ts_now;
-	}
-	else{
-		count2++;
-	}
-	int delta_us2 = (int)ktime_us_delta(ts_now, ts_earlier_adapted);
-	if( delta_us2 > (IOCTL_FREQ_SECS*1000000) && count2 ){
-		//par->freq_ioctl_processes = count2*1000000/delta_us2; // floored value
-		par->freq_ioctl_processes = (2*count2*1000000+delta_us2) / (2*delta_us2); // rounded value
-//#define DEBUG_IOCTL_ADAPTED_FREQ
-#ifdef DEBUG_IOCTL_ADAPTED_FREQ
-		printk("freq IOCTL processes %d/s\n", par->freq_ioctl_processes);
-#endif //DEBUG_IOCTL_ADAPTED_FREQ
-		count2 = 0;
-		ts_earlier_adapted = ts_now;
-	}
-
-	/* Blocking wait for new transfer */
-	/*if (par->pdata->te_irq_enabled && par->ready_for_spi_async){
-		while(par->nb_ioctl_during_dma_spi_tx){};
-		par->nb_ioctl_during_dma_spi_tx++;
-	}*/
-
-	/* Process current framebuffer */
-	fbtft_flip_backbuffer(var, info);
-
-#ifdef FBTFT_USE_BACK_BUFFERS_COPIES
-	return -ENODEV; // forcing error to prevent SDL to segfault when flipping surface->pixels buffer (in this config, flipping buffers shoud not be done, since there is only 1 pixel buffer)
-#else 	//FBTFT_USE_BACK_BUFFERS_COPIES
 	return 0;
-#endif 	//FBTFT_USE_BACK_BUFFERS_COPIES
 }
 
 static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
@@ -1537,9 +1537,13 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		par->fbtftops.register_backlight = fbtft_register_backlight;
 
 	/* Init timer */
-	//INIT_DELAYED_WORK(&par->my_work, fbtft_my_work_handler);
+#ifdef FBTFT_USE_DELAYED_WORKER_FOR_BH
+	INIT_DELAYED_WORK(&par->delayed_worker_postprocess.delayed_worker, fbtft_worker_postprocess_function);
+	par->delayed_worker_postprocess.data_ptr = par;
+#else // FBTFT_USE_DELAYED_WORKER_FOR_BH
 	timer_setup(&par->timer_postprocess.timer, fbtft_timer_postprocess_function, 0);
 	par->timer_postprocess.data_ptr = par;
+#endif // FBTFT_USE_DELAYED_WORKER_FOR_BH
 
 	/* Use driver provided functions */
 	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
@@ -1982,7 +1986,7 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 		prev_ts = ts_now;
 	}
 
-	/* Sanity check: SPI data transfer not initialized yet */
+	/* Sanity check: SPI async data transfers not initialized yet */
 	if(!par->ready_for_spi_async){
 		return IRQ_HANDLED;
 	}
@@ -2015,7 +2019,6 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 	/* Reset ioctl frequency metrics here */	
 	if(us_since_last_ioctl > IOCTL_FREQ_SECS*1000000){
 		par->freq_ioctl_calls = 0;
-		par->freq_ioctl_processes = 0;
 	}
 
 	/* Trigger new SPI transfer */
@@ -2223,7 +2226,7 @@ int fbtft_probe_common(struct fbtft_display *display,
 		Should be rising according to the datasheet 
 		(time when display is not reading GRAM)
 		but falling is better in practice since it gives 
-		some delay that hides the tearing line */
+		some controlled delay that hides the tearing line */
 		/*#warning Rising edge for tests
 		err = request_irq(par->pdata->te_irq_id, irq_TE_handler, 
 				IRQF_SHARED | IRQF_TRIGGER_RISING,

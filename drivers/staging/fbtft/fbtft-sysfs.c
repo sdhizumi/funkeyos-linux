@@ -453,18 +453,6 @@ static ssize_t show_freq_ioctl_calls(struct device *device,
 static struct device_attribute freq_ioctl_calls_device_attr =
 	__ATTR(freq_ioctl_calls, 0440, show_freq_ioctl_calls, NULL);
 
-static ssize_t show_freq_ioctl_processes(struct device *device,
-			  struct device_attribute *attr, char *buf)
-{
-	struct fb_info *fb_info = dev_get_drvdata(device);
-	struct fbtft_par *par = fb_info->par;
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", par->freq_ioctl_processes);
-}
-
-static struct device_attribute freq_ioctl_processes_device_attr =
-	__ATTR(freq_ioctl_processes, 0440, show_freq_ioctl_processes, NULL);
-
 static ssize_t show_freq_te(struct device *device,
 			  struct device_attribute *attr, char *buf)
 {
@@ -555,7 +543,6 @@ void fbtft_sysfs_init(struct fbtft_par *par)
 	device_create_file(par->info->dev, &rotate_soft_device_attr);
 	device_create_file(par->info->dev, &notification_device_attr);
 	device_create_file(par->info->dev, &freq_ioctl_calls_device_attr);
-	device_create_file(par->info->dev, &freq_ioctl_processes_device_attr);
 	device_create_file(par->info->dev, &freq_te_device_attr);
 	device_create_file(par->info->dev, &freq_dma_transfer_device_attr);
 	//device_create_file(par->info->dev, &overlay_device_attrs[0]);
@@ -571,7 +558,6 @@ void fbtft_sysfs_exit(struct fbtft_par *par)
 	device_remove_file(par->info->dev, &rotate_soft_device_attr);
 	device_remove_file(par->info->dev, &notification_device_attr);
 	device_remove_file(par->info->dev, &freq_ioctl_calls_device_attr);
-	device_remove_file(par->info->dev, &freq_ioctl_processes_device_attr);
 	device_remove_file(par->info->dev, &freq_te_device_attr);
 	device_remove_file(par->info->dev, &freq_dma_transfer_device_attr);
 	//device_remove_file(par->info->dev, &overlay_device_attrs[0]);

@@ -161,13 +161,14 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	lock = true;
 	ts_lock = ktime_get();
 
-    /* Debug */
+    /* Debug time */
     if(dump_time){
 	    dump_time = false;
     	
     	static int cnt_dump_asked = 0;
     	cnt_dump_asked++;
-    	if(cnt_dump_asked == 10){
+    	#define FBTFT_NB_TE_LOCK_TO_PRINT_TIME	1
+    	if(cnt_dump_asked >= FBTFT_NB_TE_LOCK_TO_PRINT_TIME){
     		cnt_dump_asked = 0;
 	    	fbtft_time_dump();
 		}
@@ -188,7 +189,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	else{
     	count++;
 	}
-	par->us_between_dma_transfers = (int)ktime_us_delta(ts_now, ts_last_dma_transfer);
+	par->us_between_dma_transfers = (unsigned int)ktime_us_delta(ts_now, ts_last_dma_transfer);
 	ts_last_dma_transfer = ts_now;
 	int delta_us = ktime_us_delta(ts_now, prev_ts);
 	if( delta_us > SECS_SPI_ASYNC_FREQ*1000000){
@@ -406,9 +407,6 @@ int fbtft_write_vmem16_bus8_async(struct fbtft_par *par, size_t offset, size_t l
 
 	/* DC pin = 1  for data transfers */
 	set_dc(par, 1);
-
-	/* Reset nb_ioctl_during_dma_spi_tx */
-	par->nb_ioctl_during_dma_spi_tx = 0;
 
 	/* FORCED non buffered write here */
 	/* since there is only one SPI */

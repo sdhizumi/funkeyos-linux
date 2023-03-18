@@ -36,6 +36,8 @@
 		"f0 18 1E 0A 09 25 3F 43 52 19 14 13 2c 31"
 #endif
 
+#define CONF2
+
 /**
  * enum st7789v_command - ST7789V display controller commands
  *
@@ -70,6 +72,7 @@ enum st7789v_command {
 	VRHS = 0xC3,
 	VDVS = 0xC4,
 	VCMOFSET = 0xC5,
+	FRCTRL2 = 0xC6,
 	PWCTRL1 = 0xD0,
 	PVGAMCTRL = 0xE0,
 	NVGAMCTRL = 0xE1,
@@ -116,13 +119,18 @@ static int init_display(struct fbtft_par *par)
 	write_reg(par, 0xB0, 0x00, 0xF8); // RAMCTRL: little endian
 
 	/* Back/front porch */
-	/* A good alternaive here to be sure the display read is done
+	/* A good alternative here to be sure the display read is done
 	before the SPI write, is to reduce the back porch 
 	and raise the front porch
 	while leaving equal the sum of both */
-	//#warning 	Tests with back porch
-	write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);	//default
+#ifdef CONF2
+	write_reg(par, 0xB2,0x0F,0x0F,0x00,0x33,0x33);
+#else //CONF2
+	write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);	//default (59.3Hz if FRCTRL2==15)
+	//write_reg(par, 0xB2,0x09,0x09,0x00,0x33,0x33);	// Test for precise 60.4Hz (if FRCTRL2==15)
+	//write_reg(par, 0xB2,0x07,0x07,0x00,0x33,0x33);	// Test for precise 61,1Hz (if FRCTRL2==15)
 	//write_reg(par, 0xB2,0x7F,0x7F,0x00,0x33,0x33);	//max
+#endif //CONF2
 	
 	write_reg(par, 0xB7,0x00);
 	write_reg(par, 0xBB,0x36);
@@ -214,6 +222,9 @@ static int init_display(struct fbtft_par *par)
 		Only changing the back and front porch size	
 		really have an impact on this frequency.
 	*/
+#ifdef CONF2
+	frctrl2_par |= 0x12; //55Hz
+#else //CONF2
 	//frctrl2_par |= 0x1F; //39Hz
 	//frctrl2_par |= 0x1A; //44Hz
 	//frctrl2_par |= 0x18; //46Hz
@@ -221,14 +232,19 @@ static int init_display(struct fbtft_par *par)
 	//frctrl2_par |= 0x16; //49Hz
 	//frctrl2_par |= 0x15; //50Hz
 	//frctrl2_par |= 0x14; //52Hz
+	//frctrl2_par |= 0x13; //54Hz
 	//frctrl2_par |= 0x12; //55Hz
 	//frctrl2_par |= 0x11; //57Hz
 	//frctrl2_par |= 0x10; //58Hz
-	frctrl2_par |= 0x0F; //60Hz
+	frctrl2_par |= 0x0F; //60Hz // -> FKS v2
+	//frctrl2_par |= 0x0E; //62Hz
 	//frctrl2_par |= 0x0D; //64Hz
 	//frctrl2_par |= 0x09; //75Hz
 	//frctrl2_par |= 0x03; //99Hz
 	//frctrl2_par |= 0x02; //105Hz -> good one when no TE signal
+	//frctrl2_par |= 0x00; //119Hz
+#endif //CONF2
+	write_reg(par, FRCTRL2, frctrl2_par);
 
 	/* Turn on display */
 	write_reg(par, MIPI_DCS_SET_DISPLAY_ON);

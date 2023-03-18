@@ -39,13 +39,15 @@
 */
 #define MIN_FPS_WITHOUT_APPLICATIVE_TEARING		9
 
+#define FBTFT_USE_DELAYED_WORKER_FOR_BH
+
 #define FBTFT_ONBOARD_BACKLIGHT 			2
 #define FBTFT_GPIO_NO_MATCH					0xFFFF
 #define FBTFT_GPIO_NAME_SIZE				32
 #define FBTFT_MAX_INIT_SEQUENCE      		512
 #define FBTFT_GAMMA_MAX_VALUES_TOTAL 		128
 #define FBTFT_OVERLAY_NB_VALUES				4
-#define FBTFT_FREQ_UPDATE_SECS				2
+#define FBTFT_FREQ_UPDATE_SECS				1
 
 #define FBTFT_NOTIF_MAX_SIZE				400
 
@@ -185,11 +187,20 @@ struct fbtft_platform_data {
 	struct fbtft_par *par;
 };
 
-/* Surcharged timer structure to store data pointer */
-struct timer_with_data {
-    struct timer_list timer;
-    void * data_ptr;
-};
+
+#ifdef FBTFT_USE_DELAYED_WORKER_FOR_BH
+	/* Surcharged delayed work structure to store data pointer */
+	struct delayed_work_with_data {
+	    struct delayed_work delayed_worker;
+	    void * data_ptr;
+	};
+#else //FBTFT_USE_DELAYED_WORKER_FOR_BH
+	/* Surcharged timer structure to store data pointer */
+	struct timer_with_data {
+	    struct timer_list timer;
+	    void * data_ptr;
+	};
+#endif //FBTFT_USE_DELAYED_WORKER_FOR_BH
 
 /**
  * struct fbtft_par - Main FBTFT data structure
@@ -309,14 +320,12 @@ struct fbtft_par {
 	void *extra;
 
 	/* Frequencies */
-	int freq_ioctl_calls;
-	int us_between_ioctl_calls;
+	unsigned int freq_ioctl_calls;
+	unsigned int us_between_ioctl_calls;
 	ktime_t ts_last_ioctl_call;
-	int freq_ioctl_processes;
-	u8 nb_ioctl_during_dma_spi_tx;
-	int freq_te;
-	int freq_dma_transfers;
-	int us_between_dma_transfers;
+	unsigned int freq_te;
+	unsigned int freq_dma_transfers;
+	unsigned int us_between_dma_transfers;
 	long avg_fps;
 	bool first_update_done;
 	ktime_t update_time;
@@ -331,7 +340,12 @@ struct fbtft_par {
 	int write_line_end;
 	u32 length_data_transfer;
 	bool must_send_data_transfer_cmd;
+
+#ifdef FBTFT_USE_DELAYED_WORKER_FOR_BH
+	struct delayed_work_with_data delayed_worker_postprocess;
+#else // FBTFT_USE_DELAYED_WORKER_FOR_BH
 	struct timer_with_data timer_postprocess;
+#endif // FBTFT_USE_DELAYED_WORKER_FOR_BH
 
 };
 
@@ -390,7 +404,7 @@ typedef enum {FBTFT_DEBUG_TIME_TRIGGERS} E_FBTFT_DEBUG_TIME_TRIGGERS;
 
 #define FBTFT_NO_TIME_INDEX 0xCAFEDECA
 
-//#define FBTFT_DEBUG_TIME
+#define FBTFT_DEBUG_TIME
 #ifdef FBTFT_DEBUG_TIME
 	void __fbtft_time_tic(void);
 	void __fbtft_time_toc(E_FBTFT_DEBUG_TIME_TRIGGERS trigger, int index, bool print_now);

@@ -8,6 +8,7 @@
 #include <linux/workqueue.h>
 #include <linux/fbtft.h>
 #include "fb_text.h"
+#include "fbtft-utils.h"
 
 /*****************************************************************************
  *
@@ -167,7 +168,7 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
     	
     	static int cnt_dump_asked = 0;
     	cnt_dump_asked++;
-    	#define FBTFT_NB_TE_LOCK_TO_PRINT_TIME	1
+    	#define FBTFT_NB_TE_LOCK_TO_PRINT_TIME	10
     	if(cnt_dump_asked >= FBTFT_NB_TE_LOCK_TO_PRINT_TIME){
     		cnt_dump_asked = 0;
 	    	fbtft_time_dump();
@@ -193,8 +194,18 @@ int fbtft_start_new_screen_transfer_async(struct fbtft_par *par)
 	ts_last_dma_transfer = ts_now;
 	int delta_us = ktime_us_delta(ts_now, prev_ts);
 	if( delta_us > SECS_SPI_ASYNC_FREQ*1000000){
+#ifdef FBTFT_CNT_ERROR_CORRECTION
+		count += par->nb_mixed_frames;
+		par->nb_mixed_frames = 0;
 		//par->freq_dma_transfers = count*1000000/delta_us; // floored value
 		par->freq_dma_transfers = (2*count*1000000+delta_us) / (2*delta_us); // rounded value
+		if(par->freq_ioctl_calls && par->freq_ioctl_calls>par->freq_te){
+			par->freq_dma_transfers = MIN(par->freq_dma_transfers, par->freq_ioctl_calls); // cannot be higher - error correction
+		}
+#else
+		par->freq_dma_transfers = (2*count*1000000+delta_us) / (2*delta_us); // rounded value
+#endif // FBTFT_CNT_ERROR_CORRECTION
+		
 		/*fbtft_par_dbg(DEBUG_TIME_EACH_UPDATE, par,
 			 "Display update%s: fps=%ld\n, par->nb_postprocess_buffers_full=%d", 
 			 par->pdata->te_irq_enabled?" (TE)":"",

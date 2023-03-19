@@ -37,9 +37,14 @@
 	if (backbuffers not yet full) => wait a litte so that 
 	the user process has the time to fill a backbuffer 
 */
-#define MIN_FPS_WITHOUT_APPLICATIVE_TEARING		9
+#define FBTFT_MIN_FPS_WITHOUT_APPLICATIVE_TEARING		9
 
+#define FBTFT_CONF2
 #define FBTFT_USE_DELAYED_WORKER_FOR_BH
+#define FBTFT_FREQ_UPDATE_SECS				1
+#define FBTFT_MIX_SURCHARGED_FRAMES
+#define FBTFT_CNT_ERROR_CORRECTION
+
 
 #define FBTFT_ONBOARD_BACKLIGHT 			2
 #define FBTFT_GPIO_NO_MATCH					0xFFFF
@@ -47,8 +52,6 @@
 #define FBTFT_MAX_INIT_SEQUENCE      		512
 #define FBTFT_GAMMA_MAX_VALUES_TOTAL 		128
 #define FBTFT_OVERLAY_NB_VALUES				4
-#define FBTFT_FREQ_UPDATE_SECS				1
-
 #define FBTFT_NOTIF_MAX_SIZE				400
 
 #define FBTFT_OF_INIT_CMD					BIT(24)
@@ -202,6 +205,14 @@ struct fbtft_platform_data {
 	};
 #endif //FBTFT_USE_DELAYED_WORKER_FOR_BH
 
+typedef enum{
+	FB_SURCHARGE_S_NONE = 0,	
+	FB_SURCHARGE_S_INIT,
+	FB_SURCHARGE_S_MID,
+	FB_SURCHARGE_S_LAST,
+	NB_FB_SURCHARGE_S,
+} FBTFT_FB_SURCHARGE_STATUS_E;
+
 /**
  * struct fbtft_par - Main FBTFT data structure
  *
@@ -260,12 +271,13 @@ struct fbtft_par {
 	} txbuf;
 	u8 *buf;
 	u8 *vmem_ptr;
-	u8 *vmem_ptr_to_postprocess;
 	u8 *vmem_postprocess_hid;
 	u8 *vmem_postprocessed;
 	u8 *vmem_postprocess_buffers[FBTFT_NB_POSTPROCESS_BUFFERS];
 	int vmem_size;
 	int nb_framebuffers_full;
+	FBTFT_FB_SURCHARGE_STATUS_E framebuffer_surcharge_status;
+	int nb_mixed_frames;
 	u8 last_full_framebuffer_idx;
 	u8 cur_framebuffer_idx;
 	int nb_postprocess_buffers_full;
@@ -404,7 +416,7 @@ typedef enum {FBTFT_DEBUG_TIME_TRIGGERS} E_FBTFT_DEBUG_TIME_TRIGGERS;
 
 #define FBTFT_NO_TIME_INDEX 0xCAFEDECA
 
-#define FBTFT_DEBUG_TIME
+//#define FBTFT_DEBUG_TIME
 #ifdef FBTFT_DEBUG_TIME
 	void __fbtft_time_tic(void);
 	void __fbtft_time_toc(E_FBTFT_DEBUG_TIME_TRIGGERS trigger, int index, bool print_now);

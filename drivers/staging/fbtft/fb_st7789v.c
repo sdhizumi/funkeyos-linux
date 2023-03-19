@@ -36,8 +36,6 @@
 		"f0 18 1E 0A 09 25 3F 43 52 19 14 13 2c 31"
 #endif
 
-#define CONF2
-
 /**
  * enum st7789v_command - ST7789V display controller commands
  *
@@ -123,14 +121,21 @@ static int init_display(struct fbtft_par *par)
 	before the SPI write, is to reduce the back porch 
 	and raise the front porch
 	while leaving equal the sum of both */
-#ifdef CONF2
-	write_reg(par, 0xB2,0x0F,0x0F,0x00,0x33,0x33);
-#else //CONF2
+#ifdef FBTFT_CONF2
+	//write_reg(par, 0xB2,0x25,0x25,0x00,0x33,0x33); 
+	write_reg(par, 0xB2,0x20,0x20,0x00,0x33,0x33); //ok 2
+	//write_reg(par, 0xB2,0x15,0x15,0x00,0x33,0x33); 
+	//write_reg(par, 0xB2,0x13,0x13,0x00,0x33,0x33); 
+	//write_reg(par, 0xB2,0x11,0x11,0x00,0x33,0x33); 
+	//write_reg(par, 0xB2,0x0F,0x0F,0x00,0x33,0x33); //ok 6
+	//write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);
+	//write_reg(par, 0xB2,0x0A,0x0A,0x00,0x33,0x33);
+#else //FBTFT_CONF2
 	write_reg(par, 0xB2,0x0C,0x0C,0x00,0x33,0x33);	//default (59.3Hz if FRCTRL2==15)
 	//write_reg(par, 0xB2,0x09,0x09,0x00,0x33,0x33);	// Test for precise 60.4Hz (if FRCTRL2==15)
 	//write_reg(par, 0xB2,0x07,0x07,0x00,0x33,0x33);	// Test for precise 61,1Hz (if FRCTRL2==15)
 	//write_reg(par, 0xB2,0x7F,0x7F,0x00,0x33,0x33);	//max
-#endif //CONF2
+#endif //FBTFT_CONF2
 	
 	write_reg(par, 0xB7,0x00);
 	write_reg(par, 0xBB,0x36);
@@ -221,29 +226,16 @@ static int init_display(struct fbtft_par *par)
 		is always at the same frequency (58-59 times per sec). 
 		Only changing the back and front porch size	
 		really have an impact on this frequency.
+		Careful to adjust SPI speed to avoid tearing
 	*/
-#ifdef CONF2
-	frctrl2_par |= 0x12; //55Hz
-#else //CONF2
-	//frctrl2_par |= 0x1F; //39Hz
-	//frctrl2_par |= 0x1A; //44Hz
-	//frctrl2_par |= 0x18; //46Hz
-	//frctrl2_par |= 0x17; //48Hz -> FKS v1
-	//frctrl2_par |= 0x16; //49Hz
-	//frctrl2_par |= 0x15; //50Hz
-	//frctrl2_par |= 0x14; //52Hz
-	//frctrl2_par |= 0x13; //54Hz
-	//frctrl2_par |= 0x12; //55Hz
-	//frctrl2_par |= 0x11; //57Hz
-	//frctrl2_par |= 0x10; //58Hz
-	frctrl2_par |= 0x0F; //60Hz // -> FKS v2
-	//frctrl2_par |= 0x0E; //62Hz
-	//frctrl2_par |= 0x0D; //64Hz
-	//frctrl2_par |= 0x09; //75Hz
-	//frctrl2_par |= 0x03; //99Hz
-	//frctrl2_par |= 0x02; //105Hz -> good one when no TE signal
-	//frctrl2_par |= 0x00; //119Hz
-#endif //CONF2
+#ifdef FBTFT_CONF2
+	frctrl2_par |= 0x12; //ok
+	//frctrl2_par |= 0x13; 
+	//frctrl2_par |= 0x14; // tearing (reduce SPI spead)
+	//frctrl2_par |= 0x18; // tearing 
+#else // not(FBTFT_CONF2)
+	frctrl2_par |= 0x0F; // -> FKS v60fps
+#endif //FBTFT_CONF2
 	write_reg(par, FRCTRL2, frctrl2_par);
 
 	/* Turn on display */

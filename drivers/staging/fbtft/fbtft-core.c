@@ -528,12 +528,16 @@ static void fbtft_mkdirty(struct fb_info *info, int y, int height)
 	schedule_delayed_work(&info->deferred_work, fbdefio->delay);
 }
 
+static bool fbtft_need_hid(struct fbtft_par *par)
+{
+	return (par->notification[0] || par->low_battery);
+}
+
 
 static u8 *fbtft_vmem_add_hid(struct fbtft_par *par, u8* vmem_src, u8* vmem_dst)
 {
 	/* Exit if nothing to display */
-	if (!par->notification[0] &&
-		!par->low_battery){
+	if (!fbtft_need_hid(par)){
 		return vmem_src;
 	}
 
@@ -602,43 +606,237 @@ void fbtft_worker_postprocess_function(struct work_struct *work){
 	struct delayed_work *delayed_worker = container_of(work, struct delayed_work, work);
 	struct delayed_work_with_data *delayed_worker_with_data = container_of(delayed_worker, struct delayed_work_with_data, delayed_worker);
 	struct fbtft_par *par = (struct fbtft_par *) delayed_worker_with_data->data_ptr;
+	FBTFT_MIX_PONDERATION_E mix_ponderation = FBTFT_MIX_NONE;
+	u8* vmem_src1; u8* vmem_src2;
+	static int latest_mixed_framebuffer_idx;
+	int vmem_oldest_full_framebuffer_idx;
 
 	/* Debug */
 	//fbtft_time_toc(FBTFT_DELAYED_WORK_STARTED, FBTFT_NO_TIME_INDEX, false);
 
+	/* Find buffer to process */
+	if(par->nb_framebuffers_full > 0){
+
+		/* Get oldest filled buffer */
+		vmem_oldest_full_framebuffer_idx = par->last_full_framebuffer_idx + 1 - par->nb_framebuffers_full;
+		if(vmem_oldest_full_framebuffer_idx < 0) {
+			vmem_oldest_full_framebuffer_idx = FBTFT_NB_FRAMEBUFFERS+vmem_oldest_full_framebuffer_idx;
+		}
+
+	    /* Debug */
+	    fbtft_time_toc(SET_POSTPROCESS_BUF, vmem_oldest_full_framebuffer_idx, false);
+
+		/* Debug */
+		//printk("TE - nb_fb = %d, using idx %d", par->nb_framebuffers_full, vmem_oldest_full_framebuffer_idx);
+		par->nb_framebuffers_full--;
+	}
+	else{
+
+		/* Debug */
+		//printk("!TE - nb_fb = %d, using idx %d", par->nb_framebuffers_full, par->last_full_framebuffer_idx);
+
+	    /* Debug */
+	    fbtft_time_toc(SET_POSTPROCESS_BUF, par->last_full_framebuffer_idx, false);
+
+		/* Use last filled framebuffer */
+		vmem_oldest_full_framebuffer_idx = par->last_full_framebuffer_idx;
+	}
+	par->vmem_postprocessed = par->info->screen_buffer + (vmem_oldest_full_framebuffer_idx*par->vmem_size);
+
+
+#ifdef FBTFT_MIX_SURCHARGED_FRAMES
+
+	/* No mix if HID needed */
+	if(fbtft_need_hid(par)){
+		par->framebuffer_surcharge_status = FB_SURCHARGE_S_NONE;
+	}
+
+	/* 	State machine if framebuffers were filled 
+		too fast (ioctl calls > TE calls)
+		This mixes the lost frame with the adjacent 
+		ones in order not to loose information 
+	*/
+	if(par->framebuffer_surcharge_status != FB_SURCHARGE_S_NONE){
+
+		/* 	Sanity check 
+			Do not merge frame if ioctl call is about to happen. 
+			This might be merging a buffer being written (concurrent access + software tearing) 
+		*/
+		unsigned int us_since_ioctl = (unsigned int)ktime_us_delta(ktime_get(), par->ts_last_ioctl_call);
+		if( (par->framebuffer_surcharge_status == FB_SURCHARGE_S_INIT || (par->framebuffer_surcharge_status != FB_SURCHARGE_S_INIT  &&  par->cur_framebuffer_idx == latest_mixed_framebuffer_idx) ) &&
+			par->freq_ioctl_calls && 
+			us_since_ioctl > 1000000/par->freq_ioctl_calls - 2000
+		){
+			//printk("next ioctl too close! last: %dus, status: %d", us_since_ioctl, par->framebuffer_surcharge_status);
+			par->framebuffer_surcharge_status = FB_SURCHARGE_S_NONE;
+		}
+
+		/* Process states */
+		switch(par->framebuffer_surcharge_status){
+
+		case FB_SURCHARGE_S_NONE:
+			break;
+
+		case FB_SURCHARGE_S_INIT:
+
+			/* 	Set ponderation
+				(aaab) in (aaab)(bccc) or (aaab)(bbcc)(cddd)
+			*/
+			mix_ponderation = FBTFT_MIX_3_1; 
+
+			/* Set vmem sources */
+			//printk("m1 :%d", par->cur_framebuffer_idx);
+			vmem_src1 = par->info->screen_buffer + (par->cur_framebuffer_idx*par->vmem_size);
+			latest_mixed_framebuffer_idx = (par->cur_framebuffer_idx + 1) % FBTFT_NB_FRAMEBUFFERS;
+			//printk("m2 :%d", latest_mixed_framebuffer_idx);
+			vmem_src2 = par->info->screen_buffer + (latest_mixed_framebuffer_idx*par->vmem_size) ;
+
+			/* Next state */
+			par->nb_mixed_frames++;
+			if(FBTFT_NB_FRAMEBUFFERS > 3){
+				par->framebuffer_surcharge_status = FB_SURCHARGE_S_MID;
+			}
+			else{
+				par->framebuffer_surcharge_status = FB_SURCHARGE_S_LAST;	
+			}
+			break;
+
+		case FB_SURCHARGE_S_MID:
+
+			/* 	Set ponderation
+				(bbcc) in (aaab)(bbcc)(cddd)
+			*/
+			mix_ponderation = FBTFT_MIX_2_2; 
+
+			/* Set vmem sources */
+			//printk("m1 :%d", latest_mixed_framebuffer_idx);
+			vmem_src1 = par->info->screen_buffer + (latest_mixed_framebuffer_idx*par->vmem_size);
+			latest_mixed_framebuffer_idx = (latest_mixed_framebuffer_idx + 1) % FBTFT_NB_FRAMEBUFFERS;
+			//printk("m2 :%d", latest_mixed_framebuffer_idx);
+			vmem_src2 = par->info->screen_buffer + (latest_mixed_framebuffer_idx*par->vmem_size) ;
+			
+			/* Next state */
+			par->framebuffer_surcharge_status = FB_SURCHARGE_S_LAST;
+			break;
+
+		case FB_SURCHARGE_S_LAST:
+
+			/* 	Set ponderation
+				(bccc) in (aaab)(bccc) or (cddd) in (aaab)(bbcc)(cddd)
+			*/
+			mix_ponderation = FBTFT_MIX_1_3; 
+
+			/* Set vmem sources */
+			//printk("m1 :%d", latest_mixed_framebuffer_idx);
+			vmem_src1 = par->info->screen_buffer + (latest_mixed_framebuffer_idx*par->vmem_size);
+			latest_mixed_framebuffer_idx = (latest_mixed_framebuffer_idx + 1) % FBTFT_NB_FRAMEBUFFERS;
+			//printk("m2 :%d", latest_mixed_framebuffer_idx);
+			vmem_src2 = par->info->screen_buffer + (latest_mixed_framebuffer_idx*par->vmem_size) ;
+			
+			/* Next state */
+			par->framebuffer_surcharge_status = FB_SURCHARGE_S_NONE;
+			break;
+
+		default:
+			
+			/* Default state */
+			par->framebuffer_surcharge_status = FB_SURCHARGE_S_NONE;
+			break;
+		}
+	}
+#endif //FBTFT_MIX_SURCHARGED_FRAMES
+
 	/* Postprocess: Print HID */
-	par->vmem_postprocessed = fbtft_vmem_add_hid(par, par->vmem_ptr_to_postprocess, par->vmem_postprocess_hid);
+	par->vmem_postprocessed = fbtft_vmem_add_hid(par, par->vmem_postprocessed, par->vmem_postprocess_hid);
 
 	/* Postprocess: Rotate */
 	if (par->pdata->rotate_soft == 270){
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-		par->vmem_postprocessed = fbtft_transpose_inv_soft(par->vmem_postprocessed, 
+	#ifdef FBTFT_NEON_OPTIMS
+		preempt_disable();
+		kernel_neon_begin();
+		par->vmem_postprocessed = (u8*) fbtft_transpose_inv_neon((u16*) par->vmem_postprocessed, 
+			(u16*)par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+		par->vmem_postprocessed = fbtft_transpose_inv_soft( par->vmem_postprocessed, 
 			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
+	#endif //FBTFT_NEON_OPTIMS
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
 	    
 	    /* Debug */
 	    fbtft_time_toc(ROTATION_STARTED, par->cur_postprocess_buffer_idx, false);
 
-		par->vmem_postprocessed = fbtft_rotate_270cw_soft(par->vmem_postprocessed, 
-			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+	#ifdef FBTFT_NEON_OPTIMS
+		preempt_disable();
+		kernel_neon_begin();
+		par->vmem_postprocessed = (u8*) fbtft_rotate_270cw_neon((u16*) par->vmem_postprocessed, 
+			(u16*)par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
-	    
+		kernel_neon_end();
+		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+
+		if(mix_ponderation == FBTFT_MIX_NONE){
+			//printk("n: %d", vmem_oldest_full_framebuffer_idx);
+			par->vmem_postprocessed = fbtft_rotate_270cw_soft( par->vmem_postprocessed, 
+				par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+				par->info->var.xres, par->info->var.yres);	
+		}
+		else{
+			par->vmem_postprocessed = fbtft_rotate_270cw_soft_mix_src( 
+				vmem_src1, vmem_src2, 
+				par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+				par->info->var.xres, par->info->var.yres, mix_ponderation);	
+		}
+	#endif //FBTFT_NEON_OPTIMS
+
 	    /* Debug */
 	    fbtft_time_toc(ROTATION_ENDED, par->cur_postprocess_buffer_idx, false);
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
-	else if (par->pdata->rotate_soft == 90){
+	else if (par->pdata->rotate_soft == 90)
+	{
 #ifdef FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
-		par->vmem_postprocessed = fbtft_transpose_soft(par->vmem_postprocessed, 
+	#ifdef FBTFT_NEON_OPTIMS
+		preempt_disable();
+		kernel_neon_begin();
+		par->vmem_postprocessed = (u8*) fbtft_transpose_neon((u16*)par->vmem_postprocessed, 
+			(u16*)par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+		par->vmem_postprocessed = fbtft_transpose_soft( par->vmem_postprocessed, 
 			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
+	#endif //FBTFT_NEON_OPTIMS
 #else //rotate (not FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE)
-		par->vmem_postprocessed = fbtft_rotate_90cw_soft(par->vmem_postprocessed, 
+	#ifdef FBTFT_NEON_OPTIMS
+		preempt_disable();
+		kernel_neon_begin();
+		par->vmem_postprocessed = (u8*) fbtft_rotate_90cw_neon((u16*)par->vmem_postprocessed, 
+			(u16*)par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
+			par->info->var.xres, par->info->var.yres);
+		kernel_neon_end();
+		preempt_enable();
+	#else //not defined FBTFT_NEON_OPTIMS
+		par->vmem_postprocessed = fbtft_rotate_90cw_soft( par->vmem_postprocessed, 
 			par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx], 
 			par->info->var.xres, par->info->var.yres);
+	#endif //FBTFT_NEON_OPTIMS
 #endif //FBTFT_TRANSPOSE_INSTEAD_OF_ROTATE
 	}
+	/* No rotation: direct copy to current backbuffer */
+	/*else{
+		memcpy(par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx],
+			par->vmem_postprocessed, 
+			par->info->var.yres * par->info->fix.line_length);
+		par->vmem_postprocessed = par->vmem_postprocess_buffers[par->cur_postprocess_buffer_idx];
+	}*/
 
 	/* Increment postprocess_buffers idx */
 	par->last_full_postprocess_buffer_idx = par->cur_postprocess_buffer_idx;
@@ -712,35 +910,6 @@ void fbtft_timer_postprocess_function(struct timer_list *timer){
  */
 void fbtft_trigger_delayed_framebuffer_post_processing(struct fbtft_par *par){
 
-	if(par->nb_framebuffers_full > 0){
-
-		/* Get oldest filled buffer */
-		int vmem_oldest_full_framebuffer_idx = par->last_full_framebuffer_idx + 1 - par->nb_framebuffers_full;
-		if(vmem_oldest_full_framebuffer_idx < 0) {
-			vmem_oldest_full_framebuffer_idx = FBTFT_NB_FRAMEBUFFERS+vmem_oldest_full_framebuffer_idx;
-		}
-
-	    /* Debug */
-	    fbtft_time_toc(SET_POSTPROCESS_BUF, vmem_oldest_full_framebuffer_idx, false);
-
-		/* Debug */
-		//printk("TE - nb_fb = %d, using idx %d", par->nb_framebuffers_full, vmem_oldest_full_framebuffer_idx);
-
-		par->vmem_ptr_to_postprocess = par->info->screen_buffer + (vmem_oldest_full_framebuffer_idx*par->vmem_size);
-		par->nb_framebuffers_full--;
-	}
-	else{
-
-		/* Debug */
-		//printk("!TE - nb_fb = %d, using idx %d", par->nb_framebuffers_full, par->last_full_framebuffer_idx);
-
-	    /* Debug */
-	    fbtft_time_toc(SET_POSTPROCESS_BUF, par->last_full_framebuffer_idx, false);
-
-		/* Use last filled framebuffer */
-		par->vmem_ptr_to_postprocess = par->info->screen_buffer + (par->last_full_framebuffer_idx*par->vmem_size);
-	}
-
 	/* Use current vmem buf and start delayed work to set next vmem ptr */
 #ifdef FBTFT_USE_DELAYED_WORKER_FOR_BH
 	schedule_delayed_work(&par->delayed_worker_postprocess.delayed_worker, 1); // if HZ=200, this means between 5ms and 10ms later
@@ -770,7 +939,7 @@ u8 *fbtft_get_vmem_buf_to_transfer(struct fbtft_par *par){
 		par->nb_postprocess_buffers_full=0;
 		
 	}
-	else{ // No backbuffers full
+	else{ // No backbuffers full (only for the first TE irq)
 
 		/* Get latest filled buffer */
 		vmem = par->info->screen_buffer + (par->last_full_framebuffer_idx*par->vmem_size);
@@ -1195,10 +1364,11 @@ static int fbtft_fb_pan_display (struct fb_var_screeninfo *var, struct fb_info *
 		par->nb_framebuffers_full++;
 		
 		/* Debug */
-		//printk("ioctl - nb_fb = %d", par->nb_framebuffers_full);
+		//printk("IOCTL - nb_fb=%d", par->nb_framebuffers_full);
 	}
 	else if(par->nb_framebuffers_full == FBTFT_NB_FRAMEBUFFERS-1){
-		//printk("ioctl LOST FRAME - nb_fb = %d", par->nb_framebuffers_full);	
+		//printk("IOCTL - LF"); // Lost frame
+		par->framebuffer_surcharge_status = FB_SURCHARGE_S_INIT;
 	}
 
 
@@ -1463,6 +1633,8 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	par->last_full_postprocess_buffer_idx = par->cur_postprocess_buffer_idx;
 	par->vmem_ptr = par->info->screen_buffer + (par->cur_framebuffer_idx*par->vmem_size);
 	par->nb_postprocess_buffers_full = 0;
+	par->framebuffer_surcharge_status = FB_SURCHARGE_S_NONE;
+
 	par->pdata = pdata;
 	pdata->par = par;
 	par->debug = display->debug;
@@ -2001,7 +2173,7 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 #define FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER	
 #ifdef FBTFT_TE_IRQ_WAIT_ONE_FULL_BUFFER
 	if(	!par->nb_framebuffers_full &&
-		us_since_last_ioctl <= 1000000/MIN_FPS_WITHOUT_APPLICATIVE_TEARING &&
+		us_since_last_ioctl <= 1000000/FBTFT_MIN_FPS_WITHOUT_APPLICATIVE_TEARING &&
 		us_since_last_ioctl < (par->us_between_ioctl_calls*2) ){
 
 		// Debug
@@ -2010,6 +2182,7 @@ static irqreturn_t irq_TE_handler(int irq_no, void *dev_id)
 			par->nb_framebuffers_full, 
 			us_since_last_ioctl, 
 			par->us_between_ioctl_calls);*/
+		//printk("TE nb_fb=%d", par->nb_framebuffers_full);
 
 		// Exit
 		return IRQ_HANDLED;		

@@ -17,8 +17,41 @@
 
 #include <linux/types.h>
 
+// Support math
+
+// Min, max, abs
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
+#define ABS(x) (((x) < 0) ? (-x) : (x))
+
+// Division with error correct (16bpp)
+#define Half(A) (((A) >> 1) & 0x7BEF)
+#define Quarter(A) (((A) >> 2) & 0x39E7)
+// Error correction expressions to piece back the lower bits together (16bpp)
+#define RestHalf(A) ((A) & 0x0821)
+#define RestQuarter(A) ((A) & 0x1863)
+
+// Error correction expressions for quarters of pixels
+#define Corr1_3(A, B)     Quarter(RestQuarter(A) + (RestHalf(B) << 1) + RestQuarter(B))
+#define Corr3_1(A, B)     Quarter((RestHalf(A) << 1) + RestQuarter(A) + RestQuarter(B))
+
+// Error correction expressions for halves (16bpp)
+#define Corr1_1(A, B)     ((A) & (B) & 0x0821)
+
+// Quarters (16bpp)
+#define Weight1_3(A, B)   (Quarter(A) + Half(B) + Quarter(B) + Corr1_3(A, B))
+#define Weight3_1(A, B)   (Half(A) + Quarter(A) + Quarter(B) + Corr3_1(A, B))
+
+// Halves (16bpp)
+#define Weight1_1(A, B)   (Half(A) + Half(B) + Corr1_1(A, B))
+
+// Type of mix ponderation
+typedef enum{
+    FBTFT_MIX_NONE,
+    FBTFT_MIX_3_1,
+    FBTFT_MIX_2_2,
+    FBTFT_MIX_1_3,
+} FBTFT_MIX_PONDERATION_E;
 
 /* 
 Soft Matrix Rotation with only 1 pixel of extra RAM needed
@@ -50,5 +83,11 @@ u8* fbtft_rotate_90cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h);
     (dimensions multiple of 4, 16bits pixels)
 */
 u8* fbtft_rotate_270cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h);
+
+/*  
+    Mix 2 source frames and soft matrix rotate 270° CW
+    (dimensions multiple of 4, 16bits pixels)
+*/
+u8* fbtft_rotate_270cw_soft_mix_src(u8* vmem_src1, u8* vmem_src2, u8* vmem_dst, int w, int h, FBTFT_MIX_PONDERATION_E ponderation);
 
 #endif //__LINUX_FBTFT_UTILS_H

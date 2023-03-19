@@ -155,6 +155,55 @@ u8* fbtft_rotate_270cw_soft(u8* vmem_src, u8* vmem_dst, int w, int h){
     return vmem_dst;
 }
 
+/*  
+    Mix 2 source frames and soft matrix rotate 270° CW
+    (dimensions multiple of 4, 16bits pixels)
+*/
+u8* fbtft_rotate_270cw_soft_mix_src(u8* vmem_src1, u8* vmem_src2, u8* vmem_dst, int w, int h, FBTFT_MIX_PONDERATION_E ponderation){
+    
+    /* Vars */
+    int y, x;
+    u16 *src1 = (u16*) vmem_src1;
+    u16 *src2 = (u16*) vmem_src2;
+    u16 *dst = (u16*) vmem_dst;
+
+    switch (ponderation){
+    
+    default:
+    case FBTFT_MIX_2_2:
+
+        /* Main loop */
+        for (y=0; y<h; y++){
+            for (x=0; x<w; x++){
+                dst[ ( (w-1) - x )*h + y ] = Weight1_1(src1[ y*w + x ], src2[ y*w + x ]);
+            }
+        }
+        break;
+
+    case FBTFT_MIX_3_1:
+
+        /* Main loop */
+        for (y=0; y<h; y++){
+            for (x=0; x<w; x++){
+                dst[ ( (w-1) - x )*h + y ] = Weight3_1(src1[ y*w + x ], src2[ y*w + x ]);
+            }
+        }
+        break;
+
+    case FBTFT_MIX_1_3:
+
+        /* Main loop */
+        for (y=0; y<h; y++){
+            for (x=0; x<w; x++){
+                dst[ ( (w-1) - x )*h + y ] = Weight1_3(src1[ y*w + x ], src2[ y*w + x ]);
+            }
+        }
+        break;
+    }
+
+    return vmem_dst;
+}
+
 
 
 

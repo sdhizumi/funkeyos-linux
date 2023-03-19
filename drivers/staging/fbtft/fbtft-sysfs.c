@@ -453,6 +453,7 @@ static ssize_t show_freq_ioctl_calls(struct device *device,
 static struct device_attribute freq_ioctl_calls_device_attr =
 	__ATTR(freq_ioctl_calls, 0440, show_freq_ioctl_calls, NULL);
 
+#ifndef FBTFT_CNT_ERROR_CORRECTION
 static ssize_t show_freq_te(struct device *device,
 			  struct device_attribute *attr, char *buf)
 {
@@ -464,6 +465,7 @@ static ssize_t show_freq_te(struct device *device,
 
 static struct device_attribute freq_te_device_attr =
 	__ATTR(freq_te, 0440, show_freq_te, NULL);
+#endif //FBTFT_CNT_ERROR_CORRECTION
 
 static ssize_t show_freq_dma_transfer(struct device *device,
 			  struct device_attribute *attr, char *buf)
@@ -543,7 +545,9 @@ void fbtft_sysfs_init(struct fbtft_par *par)
 	device_create_file(par->info->dev, &rotate_soft_device_attr);
 	device_create_file(par->info->dev, &notification_device_attr);
 	device_create_file(par->info->dev, &freq_ioctl_calls_device_attr);
+#ifndef FBTFT_CNT_ERROR_CORRECTION
 	device_create_file(par->info->dev, &freq_te_device_attr);
+#endif //FBTFT_CNT_ERROR_CORRECTION
 	device_create_file(par->info->dev, &freq_dma_transfer_device_attr);
 	//device_create_file(par->info->dev, &overlay_device_attrs[0]);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
@@ -558,7 +562,9 @@ void fbtft_sysfs_exit(struct fbtft_par *par)
 	device_remove_file(par->info->dev, &rotate_soft_device_attr);
 	device_remove_file(par->info->dev, &notification_device_attr);
 	device_remove_file(par->info->dev, &freq_ioctl_calls_device_attr);
+#ifndef FBTFT_CNT_ERROR_CORRECTION
 	device_remove_file(par->info->dev, &freq_te_device_attr);
+#endif //FBTFT_CNT_ERROR_CORRECTION
 	device_remove_file(par->info->dev, &freq_dma_transfer_device_attr);
 	//device_remove_file(par->info->dev, &overlay_device_attrs[0]);
 	if (par->gamma.curves && par->fbtftops.set_gamma)

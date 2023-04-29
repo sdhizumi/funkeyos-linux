@@ -60,7 +60,7 @@
 		compatible = "pwm-backlight";
 		pwms = <&pwm 0 40000 1>;
 		brightness-levels = <0 1 2 3 8 14 21 32 46 60 80 100>; //2.2 div factor
-		default-brightness-level = <11>;
+		default-brightness-level = <6>;
 		power-supply = <&reg_vcc5v0>;
 	};
 

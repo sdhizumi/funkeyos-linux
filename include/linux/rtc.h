@@ -225,24 +225,10 @@ static inline bool is_leap_year(unsigned int year)
 #define rtc_register_device(device) \
 	__rtc_register_device(THIS_MODULE, device)
 
-#define devm_rtc_register_device(device) \
-	__rtc_register_device(THIS_MODULE, device)
-
 #ifdef CONFIG_RTC_HCTOSYS_DEVICE
 extern int rtc_hctosys_ret;
 #else
 #define rtc_hctosys_ret -ENODEV
-#endif
-
-#ifdef CONFIG_RTC_NVMEM
-int devm_rtc_nvmem_register(struct rtc_device *rtc,
-			    struct nvmem_config *nvmem_config);
-#else
-static inline int devm_rtc_nvmem_register(struct rtc_device *rtc,
-					  struct nvmem_config *nvmem_config)
-{
-	return 0;
-}
 #endif
 
 #endif /* _LINUX_RTC_H_ */
